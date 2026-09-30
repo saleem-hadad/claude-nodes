@@ -44,6 +44,9 @@ function createWindow() {
 
 app.setName('Claude Nodes')
 
+// Keeps development or test state separate from the real app data.
+if (process.env.CLAUDE_NODES_USER_DATA) app.setPath('userData', process.env.CLAUDE_NODES_USER_DATA)
+
 app.whenReady().then(async () => {
   await registerIpc(() => mainWindow)
   createWindow()

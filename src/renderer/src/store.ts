@@ -8,6 +8,7 @@ import type {
   SessionCard,
   SessionStatus
 } from '@shared/types'
+import { dispose as disposeTerminal } from './terminal/registry'
 
 export type Route = { view: 'projects' } | { view: 'board'; projectId: string }
 
@@ -129,6 +130,7 @@ export const useApp = create<AppState>((set, get) => ({
       board: { ...board, cards: board.cards.filter((c) => c.sessionId !== sessionId) },
       selection: get().selection.filter((id) => id !== sessionId)
     })
+    disposeTerminal(sessionId)
     await window.api.board.removeNode(board.project.id, sessionId)
   },
 

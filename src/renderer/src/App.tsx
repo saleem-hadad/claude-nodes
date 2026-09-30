@@ -40,7 +40,14 @@ export function App() {
       else if (s.route.view === 'board') s.navigate({ view: 'projects' })
     })
 
+    // Files dropped outside a drop target must not navigate the window to file://.
+    const blockDrop = (e: DragEvent) => e.preventDefault()
+    window.addEventListener('dragover', blockDrop)
+    window.addEventListener('drop', blockDrop)
+
     return () => {
+      window.removeEventListener('dragover', blockDrop)
+      window.removeEventListener('drop', blockDrop)
       offStatus()
       offStatsRefresh()
       offBoard()
