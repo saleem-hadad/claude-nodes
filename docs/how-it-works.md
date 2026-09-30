@@ -1,6 +1,6 @@
 # How Claude Nodes works
 
-The details behind the [README](../README.md): what the app runs, where status comes from, and how the code is laid out.
+The details behind the [README](../README.md): what the app runs, where status comes from, every shortcut, and how to work on the code.
 
 ```mermaid
 flowchart LR
@@ -54,6 +54,37 @@ This makes one Claude request per selected session, so it counts toward your Cla
 
 Transcripts stay where Claude Code keeps them. The app stores only the board layout (projects, card positions, sections, archive, custom titles and lineage) in `~/Library/Application Support/Claude Nodes/state.json`. *Remove from board* hides a card and never deletes a transcript.
 
+## Shortcuts
+
+| Where | Action | Shortcut |
+| --- | --- | --- |
+| Anywhere | Add a project | ⌘⇧N |
+| | Close the modal, or go back to projects | ⌘W |
+| Projects | Open the selected project | Double-click · ⌘O · ⌘↓ |
+| | Rename · remove | Enter · ⌘⌫ |
+| | Color, Reveal in Finder | Right-click |
+| Board | New session | N · ⌘N · double-click empty canvas |
+| | New terminal in the project folder | T · ⌘T |
+| | Open a card | Click · Enter |
+| | Select | Drag on empty canvas · ⇧-click · ⌘-click · ⌘A (all active) |
+| | Group the selection into a section | ⌘G |
+| | Archive the selection | ⌫ |
+| | Search the archive | Hover the stack and type · Esc |
+| | Rename a card | Double-click its title |
+| | Pan · zoom | Two-finger scroll, Space-drag or middle-drag · pinch |
+| Terminal | Newline in Claude's prompt | ⇧Enter |
+| | Clear · copy · select all | ⌘K · ⌘C · ⌘A |
+| New session from context | Start | ⌘Enter |
+
+In the terminal, Esc goes to Claude (it interrupts a turn), so it never closes the modal. ⌘W never closes the window.
+
+## Known limitations
+
+- Status is tracked only for sessions started from the app. A session running in another terminal shows as done.
+- Running `/clear` inside a card starts a new session id, which shows up as a new archived card.
+- In a repo Claude Code hasn't opened before, the first session shows Claude's folder-trust prompt. "No, exit" is preselected, so move to "Yes" before pressing Enter.
+- Built and tested on macOS only.
+
 ## Project layout
 
 ```
@@ -75,3 +106,22 @@ src/
 ```
 
 Built with Electron, electron-vite, React, TypeScript, [React Flow](https://reactflow.dev), [xterm.js](https://xtermjs.org), [node-pty](https://github.com/microsoft/node-pty) and zustand.
+
+## Development
+
+```sh
+pnpm dev          # run with hot reload
+pnpm build        # production build into out/
+pnpm start        # run the production build
+pnpm typecheck    # type-check main, preload and renderer
+pnpm dist         # build Claude Nodes.app into dist/
+```
+
+`CLAUDE_NODES_USER_DATA=/some/dir pnpm dev` keeps app state separate from your real board, which is useful for testing.
+
+The app from `pnpm dist` is signed for your Mac only. It shares its board with `pnpm dev`, so don't run both at once.
+
+### Troubleshooting installs
+
+- **Wrong Node version.** Node 20 breaks Electron's installer and makes pnpm skip Vite's native binding. If a build fails with "Cannot find native binding", switch to Node 22 and run `rm -rf node_modules && pnpm install`.
+- **`posix_spawnp failed`.** pnpm drops the execute bit on node-pty's `spawn-helper`. `scripts/postinstall.cjs` restores it, and also downloads Electron's binary, because pnpm 10 skips dependency build scripts. Run `pnpm install` again if either step was skipped.
