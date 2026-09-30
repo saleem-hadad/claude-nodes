@@ -1,0 +1,20 @@
+# Packages the electron-vite build in out/ into a macOS app: `pnpm dist`.
+appId: dev.saleem.claude-nodes
+productName: Claude Nodes
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**
+  - package.json
+# node-pty ships N-API prebuilds, so there's nothing to rebuild for Electron.
+npmRebuild: false
+# spawn-helper has to be a real file on disk for node-pty to exec it.
+asarUnpack:
+  - node_modules/node-pty/**
+mac:
+  target: dir
+  category: public.app-category.developer-tools
+  # Ad-hoc signed for running locally; hardened runtime only matters for notarization.
+  identity: '-'
+  hardenedRuntime: false
