@@ -50,6 +50,7 @@ import {
   SessionCardNode,
   type SessionFlowNode
 } from '@renderer/components/board/SessionCardNode'
+import { LineageEdge } from '@renderer/components/board/LineageEdge'
 import {
   ArchiveZoneNode,
   type ArchiveFlowNode
@@ -83,6 +84,12 @@ import '@renderer/components/board/board.css'
 type FlowNode = SessionFlowNode | ArchiveFlowNode
 
 const nodeTypes = { session: SessionCardNode, archive: ArchiveZoneNode }
+const edgeTypes = { lineage: LineageEdge }
+
+/** Home view when nothing is active: room right of the archive for new cards… */
+const HOME_FREE_SPACE = 760
+/** …and roughly the three most recent archive rows. */
+const HOME_ARCHIVE_ROWS_H = 64 + 3 * 240
 
 const STATUS_COLOR = {
   working: 'var(--status-working)',
@@ -242,6 +249,7 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
         .filter((pid) => ids.has(pid))
         .map((pid) => ({
           id: `${pid}->${child.sessionId}`,
+          type: 'lineage',
           source: pid,
           target: child.sessionId,
           animated: child.status === 'working',
@@ -401,11 +409,12 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
       const zone = archiveRef.current
       const sourceIds = new Set((merge ?? []).map((s) => s.sessionId))
       const sourceCards = all.filter((c) => sourceIds.has(c.sessionId))
+      // The merged card sits centered below its parents so lineage edges fan in.
       let preferred: Point =
         sourceCards.length > 0
           ? {
-              x: Math.max(...sourceCards.map((c) => c.x)) + CARD_W + 72,
-              y: sourceCards.reduce((sum, c) => sum + c.y, 0) / sourceCards.length
+              x: sourceCards.reduce((sum, c) => sum + c.x, 0) / sourceCards.length,
+              y: Math.max(...sourceCards.map((c) => c.y)) + CARD_H + 96
             }
           : spotForNewSession(zone, all)
       // Merged sessions are active: never start them inside the archive.
@@ -594,15 +603,24 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
   )
   useEffect(() => () => window.clearTimeout(saveViewportTimer.current), [])
 
-  const fitActive = useCallback(() => {
-    const active = cardsRef.current.filter((c) => !c.archived).map((c) => ({ id: c.sessionId }))
-    rf.fitView({
-      nodes: active.length > 0 ? active : [{ id: ARCHIVE_ID }],
-      padding: 0.2,
-      maxZoom: 1,
-      duration: 320
-    })
-  }, [rf])
+  // "Home" view: the active cards, or — when everything is archived — the most
+  // recent archive rows plus empty space on the right to start new sessions in.
+  // Fitting the whole archive would zoom a large one down to an unreadable size.
+  const fitActive = useCallback(
+    (duration = 320) => {
+      const active = cardsRef.current.filter((c) => !c.archived).map((c) => ({ id: c.sessionId }))
+      if (active.length > 0) {
+        rf.fitView({ nodes: active, padding: 0.2, maxZoom: 1, duration })
+        return
+      }
+      const a = archiveRef.current
+      rf.fitBounds(
+        { x: a.x, y: a.y, width: a.w + HOME_FREE_SPACE, height: Math.min(a.h, HOME_ARCHIVE_ROWS_H) },
+        { padding: 0.06, duration }
+      )
+    },
+    [rf]
+  )
 
   const onPaneDoubleClick = (e: ReactMouseEvent) => {
     if (!(e.target as Element).classList.contains('react-flow__pane')) return
@@ -744,10 +762,6 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
 
   const activeCount = cards.filter((c) => !c.archived).length
   const selectedCards = cards.filter((c) => selection.includes(c.sessionId))
-  const initialFit = useMemo(() => {
-    const active = cards.filter((c) => !c.archived).map((c) => ({ id: c.sessionId }))
-    return { nodes: active.length > 0 ? active : [{ id: ARCHIVE_ID }], padding: 0.2, maxZoom: 1 }
-  }, []) // only used on first render
 
   return (
     <BoardActionsContext.Provider value={actions}>
@@ -762,6 +776,7 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
             </TitleBarActions>
 
             <ReactFlow<FlowNode, Edge>
+              edgeTypes={edgeTypes}
               nodes={nodes}
               edges={edges}
               nodeTypes={nodeTypes}
@@ -778,8 +793,9 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
               onMoveStart={() => setMenu(null)}
               onMoveEnd={onMoveEnd}
               defaultViewport={board.viewport}
-              fitView={!board.viewport}
-              fitViewOptions={initialFit}
+              onInit={() => {
+                if (!board.viewport) fitActive(0)
+              }}
               minZoom={0.1}
               maxZoom={2}
               panOnScroll

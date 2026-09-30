@@ -24,7 +24,7 @@ function SessionCardNodeComponent({ data, selected, dragging }: NodeProps<Sessio
   const updated = meta?.updatedAt ?? card.createdAt
 
   let preview: { text: string; kind: 'reply' | 'prompt' | 'empty' }
-  if (meta?.lastAssistantText) preview = { text: meta.lastAssistantText, kind: 'reply' }
+  if (meta?.lastAssistantText) preview = { text: stripMarkdown(meta.lastAssistantText), kind: 'reply' }
   else if (meta?.firstPrompt) preview = { text: meta.firstPrompt, kind: 'prompt' }
   else preview = { text: 'No messages yet', kind: 'empty' }
 
@@ -39,8 +39,8 @@ function SessionCardNodeComponent({ data, selected, dragging }: NodeProps<Sessio
       data-status={card.status}
       aria-label={`${title}, ${STATUS_LABEL[card.status]}`}
     >
-      <Handle type="target" position={Position.Left} isConnectable={false} className="card-handle" />
-      <Handle type="source" position={Position.Right} isConnectable={false} className="card-handle" />
+      <Handle type="target" position={Position.Top} isConnectable={false} className="card-handle" />
+      <Handle type="source" position={Position.Bottom} isConnectable={false} className="card-handle" />
 
       <header className="card-head">
         <span
@@ -132,3 +132,12 @@ function TitleEditor({ sessionId, initial }: { sessionId: string; initial: strin
 }
 
 export const SessionCardNode = memo(SessionCardNodeComponent)
+
+/** Card previews are plain text: drop the markdown syntax Claude replies with. */
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/(\*\*|__|`)/g, '')
+    .replace(/^\s{0,3}(#{1,6}|>)\s+/gm, '')
+}

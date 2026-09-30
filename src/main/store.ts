@@ -4,6 +4,9 @@ import fs from 'fs'
 import path from 'path'
 import type { BoardNode, Project, Rect, Viewport } from '@shared/types'
 
+/** Six 288px card columns with 24px gaps and 40px side padding. */
+const DEFAULT_ARCHIVE_W = 2 * 40 + 6 * 288 + 5 * 24
+
 export interface BoardState {
   nodes: Record<string, BoardNode>
   archive: Rect
@@ -82,7 +85,7 @@ export function getProject(id: string): Project {
 export function getBoard(projectId: string): BoardState {
   let board = state.boards[projectId]
   if (!board) {
-    board = { nodes: {}, archive: { x: 0, y: 0, w: 1344, h: 320 }, hidden: [] }
+    board = { nodes: {}, archive: { x: 0, y: 0, w: DEFAULT_ARCHIVE_W, h: 320 }, hidden: [] }
     state.boards[projectId] = board
   }
   if (!board.hidden) board.hidden = []

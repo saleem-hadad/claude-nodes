@@ -21,7 +21,6 @@
   align-items: center;
   gap: 8px;
   flex: none;
-  min-width: 96px;
 }
 
 .term-status-label {
