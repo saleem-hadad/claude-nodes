@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { ArchiveRestore, X } from 'lucide-react'
 import { Modal } from '@renderer/components/Modal'
 import { cardTitle, useApp, useCard } from '@renderer/store'
-import { STACK_RESULTS, stackZone } from '@renderer/components/board/layout'
+import { STACK_ROWS, stackZone } from '@renderer/components/board/layout'
 import type { BoardSnapshot, TranscriptMessage } from '@shared/types'
 import './terminal.css'
 
@@ -192,8 +192,8 @@ function Skeleton() {
  * that doesn't overlap an active card.
  */
 function freeSlotBesideArchive(board: BoardSnapshot, sessionId: string) {
-  // Clear of the archive panel at its widest: it may be open behind this preview.
-  const archive = stackZone(board.archive, STACK_RESULTS)
+  // Clear of the archive panel at its largest: it may be open behind this preview.
+  const archive = stackZone(board.archive, STACK_ROWS * 2)
   const others = board.cards.filter((c) => !c.archived && c.sessionId !== sessionId)
   const rows = Math.max(3, Math.floor(archive.h / (CARD_H + GAP)))
   const overlaps = (x: number, y: number) =>

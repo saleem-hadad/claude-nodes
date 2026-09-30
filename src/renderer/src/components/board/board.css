@@ -337,7 +337,8 @@ kbd {
   transition: transform 620ms var(--ease-stack) calc(var(--stack-i, 0) * 30ms);
 }
 .board-canvas .react-flow__node-session.dragging,
-.board-canvas.is-moving-archive .react-flow__node-session {
+.board-canvas.is-moving-archive .react-flow__node-session,
+.board-canvas.is-scrolling-stack .react-flow__node-session.is-result {
   transition: none;
 }
 
@@ -479,6 +480,16 @@ kbd {
   font-size: var(--text-sm);
   pointer-events: none;
 }
+.archive-placeholder.is-dealt {
+  place-content: center;
+  gap: 3px;
+  text-align: center;
+  animation: archive-fade 240ms ease 200ms backwards;
+}
+.archive-placeholder.is-dealt strong {
+  font-size: var(--text-md);
+  font-weight: 600;
+}
 
 .archive-divider {
   position: absolute;
@@ -507,6 +518,21 @@ kbd {
   from {
     opacity: 0;
   }
+}
+
+/* In the right-hand padding, level with the band the results scroll through. */
+.archive-scrollbar {
+  position: absolute;
+  right: 11px;
+  width: 5px;
+  pointer-events: none;
+  animation: archive-fade 240ms ease 160ms backwards;
+}
+.archive-scrollbar-thumb {
+  width: 100%;
+  border-radius: 3px;
+  background: var(--text-tertiary);
+  opacity: 0.55;
 }
 
 .card-title-match {

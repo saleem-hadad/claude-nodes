@@ -1,6 +1,8 @@
 // Geometry for sections: named frames drawn around the cards grouped under them.
+import type { Node } from '@xyflow/react'
 import type { BoardSection, Rect, SessionCard } from '@shared/types'
 import { CARD_H, CARD_W, GAP, cardRect, containsPoint, findFreeSpot, intersects, type Point } from './layout'
+import type { SectionFlowNode } from './SectionNode'
 
 /** Height of a section's header strip, its drag handle. */
 export const SECTION_HEADER_H = 44
@@ -66,6 +68,51 @@ export function sectionStatus(members: SessionCard[]): 'working' | 'waiting' | u
   if (members.some((c) => c.status === 'waiting')) return 'waiting'
   if (members.some((c) => c.status === 'working')) return 'working'
   return undefined
+}
+
+/**
+ * React Flow nodes for the sections, drawn behind the cards. A section being
+ * dragged keeps its live position; otherwise its frame wraps its cards.
+ */
+export function buildSectionNodes(
+  views: SectionView[],
+  prevById: Map<string, Node>,
+  busy: Set<string>
+): SectionFlowNode[] {
+  return views.map(({ section, frame, members }) => {
+    const p = prevById.get(section.id) as SectionFlowNode | undefined
+    const status = sectionStatus(members)
+    const data =
+      p && p.data.section === section && p.data.count === members.length && p.data.status === status
+        ? p.data
+        : { section, count: members.length, status }
+    const position = p && (p.dragging || busy.has(section.id)) ? p.position : { x: frame.x, y: frame.y }
+    if (
+      p &&
+      p.data === data &&
+      p.position.x === position.x &&
+      p.position.y === position.y &&
+      p.width === frame.w &&
+      p.height === frame.h
+    ) {
+      return p
+    }
+    return {
+      ...p,
+      id: section.id,
+      type: 'section',
+      position,
+      width: frame.w,
+      height: frame.h,
+      data,
+      // Behind the archive (-1) and the cards.
+      zIndex: -2,
+      selectable: false,
+      focusable: false,
+      deletable: false,
+      dragHandle: '.section-header'
+    }
+  })
 }
 
 /**

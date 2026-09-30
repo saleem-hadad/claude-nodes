@@ -34,6 +34,9 @@ export interface ArchiveStack {
   hover: boolean
   query: string
   resultCount: number
+  /** How far the results are scrolled, and how far they can scroll (flow units). */
+  scroll: number
+  scrollMax: number
   setQuery(query: string): void
   openStack(): void
   closeStack(): void
@@ -46,6 +49,8 @@ export const ArchiveStackContext = createContext<ArchiveStack>({
   hover: false,
   query: '',
   resultCount: 0,
+  scroll: 0,
+  scrollMax: 0,
   setQuery: () => {},
   openStack: () => {},
   closeStack: () => {},

@@ -6,7 +6,8 @@ import {
   useState,
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
-  type PointerEvent as ReactPointerEvent
+  type PointerEvent as ReactPointerEvent,
+  type WheelEvent as ReactWheelEvent
 } from 'react'
 import {
   Background,
@@ -65,12 +66,12 @@ import {
 } from '@renderer/components/board/BoardContext'
 import {
   SectionNode,
-  buildSectionNodes,
   type SectionFlowNode
 } from '@renderer/components/board/SectionNode'
 import {
   SECTION_HEADER_H,
   SECTION_PAD,
+  buildSectionNodes,
   frameAround,
   layoutGroup,
   sectionAt,
@@ -101,7 +102,7 @@ import {
   CARD_W,
   GAP,
   STACK_DEPTH,
-  STACK_RESULTS,
+  STACK_ROWS,
   cardObstacles,
   cardRect,
   containsPoint,
@@ -112,6 +113,8 @@ import {
   spotRightOfArchive,
   stackRank,
   stackResultSpot,
+  stackResultsBand,
+  stackScrollMax,
   stackTop,
   stackZone,
   type Point
@@ -133,6 +136,8 @@ const HOME_ARCHIVE_ROWS_H = 64 + 3 * 240
 const FLIGHT_MS = 700
 /** Z-order of the open archive panel, above every card on the board. */
 const RAISED_Z = 1500
+/** How far a result cut off at the panel's edge still shows its shadow past the cut. */
+const CLIP_BLEED = 24
 
 const STATUS_COLOR = {
   working: 'var(--status-working)',
@@ -175,6 +180,9 @@ interface StackView {
   raised: boolean
   /** The stack (or the open panel) as drawn. */
   zone: Rect
+  /** How far the results are scrolled up, and whether there are more than fit. */
+  scroll: number
+  scrollable: boolean
 }
 
 /**
@@ -221,7 +229,8 @@ function buildNodes(
     position: keepArchive ? pa.position : { x: zone.x, y: zone.y },
     width: zone.w,
     height: zone.h,
-    className: stack.open ? 'is-open' : undefined,
+    // nowheel: scrolling over a panel with more results than fit scrolls them, not the board.
+    className: clsx(stack.open && 'is-open', stack.scrollable && 'nowheel') || undefined,
     data: pa && pa.data.count === archivedCount ? pa.data : { count: archivedCount },
     zIndex: stack.raised ? RAISED_Z : -1,
     selectable: false,
@@ -231,6 +240,7 @@ function buildNodes(
   }
 
   const top = stackTop(board.archive)
+  const band = stackResultsBand(board.archive)
   const depthOf = new Map(stack.pile.map((id, i) => [id, i]))
   const base = stack.raised ? RAISED_Z : 0
 
@@ -240,11 +250,26 @@ function buildNodes(
     const folded = card.archived
     const result = folded ? stack.results.get(id) : undefined
     const depth = depthOf.get(id) ?? 0
+    const held = Boolean(p && (p.dragging || busy.has(id)))
 
     let position = { x: card.x, y: card.y }
-    if (result) position = stackResultSpot(board.archive, result.slot)
+    if (result) position = stackResultSpot(board.archive, result.slot, stack.scroll)
     else if (folded) position = top
-    if (p && (p.dragging || busy.has(id))) position = p.position
+    if (held) position = p!.position
+
+    // Results scroll through the panel's band: ones past it aren't drawn, and
+    // ones across its edges are cut off there (their shadow still shows).
+    let offscreen = false
+    let clipPath: string | undefined
+    if (result && !held) {
+      const cutTop = band.top - position.y
+      const cutBottom = position.y + CARD_H - band.bottom
+      if (cutTop >= CARD_H || cutBottom >= CARD_H) offscreen = true
+      else if (cutTop > 0 || cutBottom > 0) {
+        const edge = (cut: number) => `${Math.max(cut, -CLIP_BLEED)}px`
+        clipPath = `inset(${edge(cutTop)} ${-CLIP_BLEED}px ${edge(cutBottom)})`
+      }
+    }
 
     // Cards deep in the stack aren't drawn, except while they sink into it.
     let hidden = false
@@ -254,7 +279,9 @@ function buildNodes(
       else hidden = true
     } else {
       if (flights.get(id)?.kind === 'sink') flights.delete(id)
-      if (p?.hidden) {
+      hidden = offscreen
+      // A card leaving the depths of the stack flies out of it; one scrolling into view doesn't.
+      if (p?.hidden && !offscreen && !p.className?.includes('is-result')) {
         flights.set(id, {
           kind: 'rise',
           until: now + FLIGHT_MS,
@@ -268,14 +295,17 @@ function buildNodes(
       clsx(
         folded && 'stack-card',
         result ? 'is-result' : folded && `stack-d${Math.min(depth, STACK_DEPTH)}`,
+        result && stack.scrollable && 'nowheel',
         rise && 'stack-enter'
       ) || undefined
     const style: CSSProperties | undefined =
       result || rise
         ? ({
-            '--stack-i': result?.slot ?? 0,
+            // Stagger the deal-out across the first rows only; later ones start out of sight.
+            '--stack-i': Math.min(result?.slot ?? 0, 2 * STACK_ROWS),
             '--fly-x': `${rise?.x ?? 0}px`,
-            '--fly-y': `${rise?.y ?? 0}px`
+            '--fly-y': `${rise?.y ?? 0}px`,
+            clipPath
           } as CSSProperties)
         : undefined
     const zIndex = !folded ? undefined : result ? base + 10 : base + Math.max(0, STACK_DEPTH - depth)
@@ -388,9 +418,10 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
   overlayOpenRef.current = overlayOpen
 
   // ---- archive stack ---------------------------------------------------------
-  // The archive is one stack of cards. Its search fans up to STACK_RESULTS
-  // matching cards out into a panel; they're the regular board nodes, so
-  // preview, drag-out and merge keep working.
+  // The archive is one stack of cards. Its search fans the matching cards (all
+  // of them, before anything is typed) out into a panel that scrolls when they
+  // don't fit; they're the regular board nodes, so preview, drag-out and merge
+  // keep working.
 
   const archivedSorted = useMemo(
     () => cards.filter((c) => c.archived).sort((a, b) => stackRank(b) - stackRank(a)),
@@ -403,12 +434,16 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
   const [stackDismissed, setStackDismissed] = useState(false)
   const [stackRaised, setStackRaised] = useState(false)
   const [movingArchive, setMovingArchive] = useState(false)
+  const [stackScrollState, setStackScroll] = useState(0)
+  // While the results scroll, they follow the wheel directly instead of gliding.
+  const [stackScrolling, setStackScrolling] = useState(false)
+  const stackScrollTimer = useRef<number | undefined>(undefined)
   const stackOpen = stackOpenState && archivedSorted.length > 0
 
   const stackResults = useMemo(() => {
     if (!stackOpen) return []
     const q = stackQuery.trim()
-    if (!q) return archivedSorted.slice(0, STACK_RESULTS).map((c) => ({ id: c.sessionId, match: undefined }))
+    if (!q) return archivedSorted.map((c) => ({ id: c.sessionId, match: undefined }))
     const hits = archivedSorted
       .map((c, rank) => ({ id: c.sessionId, rank, m: fuzzyMatch(q, cardTitle(c)) }))
       .filter((r): r is { id: string; rank: number; m: NonNullable<typeof r.m> } => r.m !== null)
@@ -417,11 +452,12 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
     const floor = hits.length > 0 ? hits[0].m.score * 0.5 : 0
     return hits
       .filter((r) => r.m.score >= floor)
-      .slice(0, STACK_RESULTS)
       .map((r) => ({ id: r.id, match: r.m.indices }))
   }, [stackOpen, stackQuery, archivedSorted])
   const stackResultsRef = useRef(stackResults)
   stackResultsRef.current = stackResults
+  const scrollMax = stackScrollMax(stackResults.length)
+  const stackScroll = Math.min(stackScrollState, scrollMax)
 
   /** The archive as drawn: the stack, or its open panel. */
   const zone = useMemo(
@@ -438,9 +474,11 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
       pile: archivedSorted.filter((c) => !results.has(c.sessionId)).map((c) => c.sessionId),
       open: stackOpen,
       raised: stackOpen || stackRaised,
-      zone
+      zone,
+      scroll: stackScroll,
+      scrollable: scrollMax > 0
     }
-  }, [stackResults, archivedSorted, stackOpen, stackRaised, zone])
+  }, [stackResults, archivedSorted, stackOpen, stackRaised, zone, stackScroll, scrollMax])
   const stackViewRef = useRef(stackView)
   stackViewRef.current = stackView
 
@@ -461,6 +499,7 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
   const closeStack = useCallback(() => {
     setStackOpen(false)
     setStackQuery('')
+    setStackScroll(0)
     setStackDismissed(true)
   }, [])
 
@@ -470,8 +509,11 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
       hover: stackHover && !stackDismissed,
       query: stackQuery,
       resultCount: stackResults.length,
+      scroll: stackScroll,
+      scrollMax,
       setQuery: (q) => {
         setStackQuery(q)
+        setStackScroll(0)
         if (q.trim()) setStackOpen(true)
       },
       openStack,
@@ -484,7 +526,18 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
         openPreview(first.id)
       }
     }),
-    [stackOpen, stackHover, stackDismissed, stackQuery, stackResults.length, openStack, closeStack, openPreview]
+    [
+      stackOpen,
+      stackHover,
+      stackDismissed,
+      stackQuery,
+      stackResults.length,
+      stackScroll,
+      scrollMax,
+      openStack,
+      closeStack,
+      openPreview
+    ]
   )
 
   const onCanvasPointerMove = (e: ReactPointerEvent) => {
@@ -493,6 +546,21 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
     setStackHover(over)
     if (!over) setStackDismissed(false)
   }
+
+  // Scrolling over the open panel scrolls its results. The panel and its cards
+  // carry `nowheel` while there's anything to scroll, so the board stays put.
+  const onCanvasWheel = (e: ReactWheelEvent) => {
+    if (!stackOpen || scrollMax === 0 || e.ctrlKey) return
+    const p = rf.screenToFlowPosition({ x: e.clientX, y: e.clientY })
+    if (!containsPoint(zoneRef.current, p)) return
+    const lines = e.deltaMode === 1 ? 16 : 1
+    const dy = (e.deltaY * lines) / rf.getViewport().zoom
+    setStackScroll((s) => Math.min(scrollMax, Math.max(0, Math.min(s, scrollMax) + dy)))
+    setStackScrolling(true)
+    window.clearTimeout(stackScrollTimer.current)
+    stackScrollTimer.current = window.setTimeout(() => setStackScrolling(false), 160)
+  }
+  useEffect(() => () => window.clearTimeout(stackScrollTimer.current), [])
 
   // Clicking anywhere else on the board folds the results back into the stack.
   useEffect(() => {
@@ -1439,11 +1507,13 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
                   'board-canvas',
                   movingArchive && 'is-moving-archive',
                   movingSection && 'is-moving-section',
+                  stackScrolling && 'is-scrolling-stack',
                   !stackOpen && ((stackHover && !stackDismissed) || archiveHot) && 'stack-lift'
                 )}
                 ref={wrapperRef}
                 onDoubleClick={onPaneDoubleClick}
                 onPointerMove={onCanvasPointerMove}
+                onWheel={onCanvasWheel}
                 onPointerLeave={() => {
                 setStackHover(false)
                 setStackDismissed(false)

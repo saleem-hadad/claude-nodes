@@ -8,6 +8,7 @@ import {
   ARCHIVE_PAD,
   CARD_H,
   CARD_W,
+  STACK_BAND_H,
   STACK_RESULTS_X,
   STACK_SEARCH_H,
   STACK_SEARCH_Y
@@ -56,6 +57,16 @@ function ArchiveZoneNodeComponent({ data, dragging }: NodeProps<ArchiveFlowNode>
           Drag a card here to archive it
         </div>
       )}
+      {/* Every card has been dealt out to the results, leaving the stack's spot empty. */}
+      {stack.open && !empty && stack.resultCount === data.count && (
+        <div
+          className="archive-placeholder is-dealt"
+          style={{ left: ARCHIVE_PAD, top: ARCHIVE_HEADER_H, width: CARD_W, height: CARD_H }}
+        >
+          <strong>{data.count === 1 ? '1 archived session' : `${data.count} archived sessions`}</strong>
+          <span>{stack.scrollMax > 0 ? 'Scroll the list, or search to filter' : 'Search to filter'}</span>
+        </div>
+      )}
       <StackSearch visible={searching} count={data.count} />
       <div
         className="archive-divider"
@@ -69,6 +80,18 @@ function ArchiveZoneNodeComponent({ data, dragging }: NodeProps<ArchiveFlowNode>
           No archived sessions match “{stack.query.trim()}”
         </p>
       )}
+      {stack.open && stack.scrollMax > 0 && <ResultsScrollbar scroll={stack.scroll} max={stack.scrollMax} />}
+    </div>
+  )
+}
+
+/** Where the results are scrolled to, beside the band they scroll through. */
+function ResultsScrollbar({ scroll, max }: { scroll: number; max: number }) {
+  const thumb = Math.max(32, (STACK_BAND_H * STACK_BAND_H) / (STACK_BAND_H + max))
+  const offset = (scroll / max) * (STACK_BAND_H - thumb)
+  return (
+    <div className="archive-scrollbar" style={{ top: ARCHIVE_HEADER_H, height: STACK_BAND_H }}>
+      <div className="archive-scrollbar-thumb" style={{ height: thumb, transform: `translateY(${offset}px)` }} />
     </div>
   )
 }

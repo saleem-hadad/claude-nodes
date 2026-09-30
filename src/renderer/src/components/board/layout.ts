@@ -15,8 +15,10 @@ export const ARCHIVE_ID = '__archive__'
 export const ARCHIVE_HEADER_H = 52
 export const ARCHIVE_PAD = 28
 
-/** Most cards the stack's search fans out at once (a 2×2 grid). */
-export const STACK_RESULTS = 4
+/** Rows of results the open panel shows at once, two cards each; the rest scroll. */
+export const STACK_ROWS = 2
+/** Height of the band the open panel's results scroll through. */
+export const STACK_BAND_H = STACK_ROWS * CARD_H + (STACK_ROWS - 1) * GAP
 /** Cards drawn in the folded stack: the top one plus two peeking out behind it. */
 export const STACK_DEPTH = 3
 /** The search field sits under the stack, below the peeking cards. */
@@ -105,12 +107,12 @@ export function cardObstacles(cards: SessionCard[], exclude: Set<string> = new S
 
 /**
  * The archive as drawn: the stack, or with `results` (the panel is open) the
- * panel holding that many fanned-out cards, two per row.
+ * panel holding that many fanned-out cards, two per row, up to STACK_ROWS rows.
  */
 export function stackZone(archive: Rect, results?: number): Rect {
   if (results === undefined) return { x: archive.x, y: archive.y, w: STACK_W, h: STACK_H }
   const cols = results > 1 ? 2 : 1
-  const rows = results > 2 ? 2 : 1
+  const rows = Math.min(STACK_ROWS, Math.max(1, Math.ceil(results / 2)))
   return {
     x: archive.x,
     y: archive.y,
@@ -124,11 +126,23 @@ export function stackTop(archive: Rect): Point {
   return { x: archive.x + ARCHIVE_PAD, y: archive.y + ARCHIVE_HEADER_H }
 }
 
-export function stackResultSpot(archive: Rect, slot: number): Point {
+/** Where a result sits in the open panel, with the results scrolled up by `scroll`. */
+export function stackResultSpot(archive: Rect, slot: number, scroll = 0): Point {
   return {
     x: archive.x + STACK_RESULTS_X + (slot % 2) * (CARD_W + GAP),
-    y: archive.y + ARCHIVE_HEADER_H + Math.floor(slot / 2) * (CARD_H + GAP)
+    y: archive.y + ARCHIVE_HEADER_H + Math.floor(slot / 2) * (CARD_H + GAP) - scroll
   }
+}
+
+/** The band of the open panel the results scroll through (flow y). */
+export function stackResultsBand(archive: Rect): { top: number; bottom: number } {
+  const top = archive.y + ARCHIVE_HEADER_H
+  return { top, bottom: top + STACK_BAND_H }
+}
+
+/** How far the results can scroll: the height of the rows below the band. */
+export function stackScrollMax(results: number): number {
+  return Math.max(0, (Math.ceil(results / 2) - STACK_ROWS) * (CARD_H + GAP))
 }
 
 /** Stack order: most recently archived or active first. */
