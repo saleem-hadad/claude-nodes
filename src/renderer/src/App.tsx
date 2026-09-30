@@ -31,10 +31,20 @@ export function App() {
       if (route.view === 'board' && route.projectId === projectId) loadBoard(projectId)
     })
 
+    // Cmd+W closes the top-most layer and never the window itself.
+    const offMenu = window.api.on.menu((command) => {
+      if (command !== 'close') return
+      const s = useApp.getState()
+      if (s.terminalSessionId) s.closeTerminal()
+      else if (s.previewSessionId) s.closePreview()
+      else if (s.route.view === 'board') s.navigate({ view: 'projects' })
+    })
+
     return () => {
       offStatus()
       offStatsRefresh()
       offBoard()
+      offMenu()
       window.clearTimeout(statsTimer)
     }
   }, [])

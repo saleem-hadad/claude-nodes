@@ -1,0 +1,73 @@
+.ctx-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 200px;
+  padding: 5px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--bg-elevated) 88%, transparent);
+  backdrop-filter: blur(30px) saturate(1.8);
+  box-shadow: var(--shadow-lg);
+  font-size: var(--text-md);
+  animation: ctx-in 90ms var(--ease-out);
+}
+
+@keyframes ctx-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+
+.ctx-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 26px;
+  padding: 0 10px 0 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  text-align: left;
+  cursor: default;
+}
+.ctx-item:hover:not(:disabled),
+.ctx-item:focus-visible {
+  background: var(--accent);
+  color: var(--text-on-accent);
+  outline: none;
+}
+.ctx-item:disabled {
+  opacity: 0.4;
+}
+.ctx-item.is-danger:not(:hover) {
+  color: var(--status-waiting);
+}
+
+.ctx-icon {
+  display: inline-flex;
+  width: 16px;
+  justify-content: center;
+  opacity: 0.85;
+}
+.ctx-icon svg {
+  width: 14px;
+  height: 14px;
+}
+.ctx-label {
+  flex: 1;
+}
+.ctx-hint {
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+}
+.ctx-item:hover .ctx-hint {
+  color: inherit;
+  opacity: 0.8;
+}
+
+.ctx-sep {
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--separator);
+}

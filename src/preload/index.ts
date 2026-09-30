@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import { IPC, type Api } from '@shared/api'
 
 function subscribe<A extends unknown[]>(channel: string, cb: (...args: A) => void) {
@@ -11,10 +11,11 @@ function subscribe<A extends unknown[]>(channel: string, cb: (...args: A) => voi
 
 const api: Api = {
   appInfo: () => ipcRenderer.invoke(IPC.appInfo),
+  pathForFile: (file) => webUtils.getPathForFile(file),
 
   projects: {
     list: () => ipcRenderer.invoke(IPC.projectsList),
-    add: () => ipcRenderer.invoke(IPC.projectsAdd),
+    add: (repoPath) => ipcRenderer.invoke(IPC.projectsAdd, repoPath),
     update: (id, patch) => ipcRenderer.invoke(IPC.projectsUpdate, id, patch),
     remove: (id) => ipcRenderer.invoke(IPC.projectsRemove, id),
     revealInFinder: (id) => ipcRenderer.invoke(IPC.projectsReveal, id),
@@ -50,7 +51,8 @@ const api: Api = {
     ptyExit: (cb) => subscribe(IPC.evPtyExit, cb),
     status: (cb) => subscribe(IPC.evStatus, cb),
     boardChanged: (cb) => subscribe(IPC.evBoardChanged, cb),
-    summarizeProgress: (cb) => subscribe(IPC.evSummarizeProgress, cb)
+    summarizeProgress: (cb) => subscribe(IPC.evSummarizeProgress, cb),
+    menu: (cb) => subscribe(IPC.evMenu, cb)
   }
 }
 

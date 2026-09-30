@@ -48,18 +48,34 @@ export const IPC = {
   evPtyExit: 'ev:pty-exit',
   evStatus: 'ev:status',
   evBoardChanged: 'ev:board-changed',
-  evSummarizeProgress: 'ev:summarize-progress'
+  evSummarizeProgress: 'ev:summarize-progress',
+  evMenu: 'ev:menu'
 } as const
+
+/**
+ * Commands sent from the native application menu. The menu owns the
+ * shortcuts so they work even while a terminal has keyboard focus.
+ * - close:       Cmd+W — closes the open modal, else goes back to projects (never closes the window)
+ * - new-session: Cmd+N — new Claude session on the open board
+ * - new-project: Cmd+Shift+N — add a project folder
+ */
+export type MenuCommand = 'close' | 'new-session' | 'new-project'
 
 export type Unsubscribe = () => void
 
 export interface Api {
   appInfo(): Promise<AppInfo>
+  /** Absolute path of a File from a drag-and-drop event ('' if it has none). */
+  pathForFile(file: File): string
 
   projects: {
     list(): Promise<Project[]>
-    /** Opens a native folder picker. Resolves null if the user cancels. */
-    add(): Promise<Project | null>
+    /**
+     * Adds a project for a local folder. Without a path, opens a native folder
+     * picker and resolves null if the user cancels. Adding a folder that is
+     * already a project returns the existing project.
+     */
+    add(repoPath?: string): Promise<Project | null>
     update(id: string, patch: { name?: string; color?: FolderColor }): Promise<Project>
     remove(id: string): Promise<void>
     revealInFinder(id: string): Promise<void>
@@ -99,5 +115,6 @@ export interface Api {
     /** Transcripts or board state changed on disk; the renderer should reload the board. */
     boardChanged(cb: (projectId: string) => void): Unsubscribe
     summarizeProgress(cb: (progress: SummarizeProgress) => void): Unsubscribe
+    menu(cb: (command: MenuCommand) => void): Unsubscribe
   }
 }
