@@ -2,7 +2,7 @@
 import { app } from 'electron'
 import fs from 'fs'
 import path from 'path'
-import type { BoardNode, Project, Rect, Viewport } from '@shared/types'
+import type { BoardNode, BoardSection, Project, Rect, Viewport } from '@shared/types'
 
 /** Six 288px card columns with 24px gaps and 40px side padding. */
 const DEFAULT_ARCHIVE_W = 2 * 40 + 6 * 288 + 5 * 24
@@ -10,6 +10,7 @@ const DEFAULT_ARCHIVE_W = 2 * 40 + 6 * 288 + 5 * 24
 export interface BoardState {
   nodes: Record<string, BoardNode>
   archive: Rect
+  sections?: Record<string, BoardSection>
   viewport?: Viewport
   /** Sessions removed from the board; never re-imported. */
   hidden?: string[]
@@ -89,6 +90,7 @@ export function getBoard(projectId: string): BoardState {
     state.boards[projectId] = board
   }
   if (!board.hidden) board.hidden = []
+  if (!board.sections) board.sections = {}
   return board
 }
 

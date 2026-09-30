@@ -29,7 +29,11 @@ const api: Api = {
     saveViewport: (projectId, viewport) =>
       ipcRenderer.invoke(IPC.boardSaveViewport, projectId, viewport),
     removeNode: (projectId, sessionId) =>
-      ipcRenderer.invoke(IPC.boardRemoveNode, projectId, sessionId)
+      ipcRenderer.invoke(IPC.boardRemoveNode, projectId, sessionId),
+    saveSection: (projectId, section) =>
+      ipcRenderer.invoke(IPC.boardSaveSection, projectId, section),
+    removeSection: (projectId, sectionId) =>
+      ipcRenderer.invoke(IPC.boardRemoveSection, projectId, sectionId)
   },
 
   sessions: {

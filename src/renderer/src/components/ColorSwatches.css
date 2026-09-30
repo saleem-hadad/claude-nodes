@@ -1,0 +1,28 @@
+/* Colour swatches in a context menu row, indented to line up with item labels. */
+.swatches {
+  display: flex;
+  gap: 6px;
+  padding: 5px 8px 5px 30px;
+}
+.swatch {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.18);
+  color: #fff;
+  cursor: default;
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.swatch:hover {
+  transform: scale(1.18);
+}
+.swatch.is-current {
+  box-shadow:
+    inset 0 0 0 0.5px rgba(0, 0, 0, 0.18),
+    0 0 0 2px var(--bg-elevated),
+    0 0 0 3.5px var(--border-strong);
+}

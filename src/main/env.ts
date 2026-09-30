@@ -128,6 +128,12 @@ export function spawnEnv(extra: Record<string, string> = {}): Record<string, str
   return { ...env, ...extra }
 }
 
+/** The user's login shell, for terminal cards. */
+export function userShell(): string {
+  const shell = baseEnv.SHELL || process.env.SHELL
+  return shell && path.isAbsolute(shell) ? shell : '/bin/zsh'
+}
+
 export function getClaudePath() {
   return claudePath
 }

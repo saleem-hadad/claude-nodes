@@ -1,7 +1,8 @@
-// Runs `claude` in pseudo-terminals, one per session card.
+// Runs `claude` (or a plain shell, for terminal cards) in pseudo-terminals,
+// one per session card.
 import * as pty from 'node-pty'
-import type { SessionStatus } from '@shared/types'
-import { requireClaude, spawnEnv } from './env'
+import type { SessionKind, SessionStatus } from '@shared/types'
+import { requireClaude, spawnEnv, userShell } from './env'
 import { hookEnv, hookSettings, markProcess, noteUserInput } from './hooks'
 
 const BUFFER_LIMIT = 2 * 1024 * 1024
@@ -29,6 +30,8 @@ export interface SpawnOptions {
   sessionId: string
   projectId: string
   cwd: string
+  /** Defaults to 'claude'. A terminal ignores resume, name and initialPrompt. */
+  kind?: SessionKind
   /** Resume an existing transcript instead of starting a new session with this id. */
   resume: boolean
   name?: string
@@ -73,21 +76,27 @@ function append(r: Running, data: string) {
   if (!r.flushTimer) r.flushTimer = setTimeout(() => flush(r), FLUSH_MS)
 }
 
-export function spawnSession(opts: SpawnOptions) {
-  if (running.has(opts.sessionId)) return
-  const claude = requireClaude()
+/** Command line for a card's process. Terminals get a login shell, like Terminal.app. */
+function commandFor(opts: SpawnOptions): { file: string; args: string[]; env: Record<string, string> } {
+  if (opts.kind === 'terminal') return { file: userShell(), args: ['-l'], env: spawnEnv() }
 
   const args = opts.resume ? ['--resume', opts.sessionId] : ['--session-id', opts.sessionId]
   if (opts.name) args.push('--name', opts.name)
   args.push('--settings', hookSettings())
   if (opts.initialPrompt) args.push(opts.initialPrompt)
+  return { file: requireClaude(), args, env: spawnEnv(hookEnv(opts.sessionId)) }
+}
 
-  const proc = pty.spawn(claude, args, {
+export function spawnSession(opts: SpawnOptions) {
+  if (running.has(opts.sessionId)) return
+  const { file, args, env } = commandFor(opts)
+
+  const proc = pty.spawn(file, args, {
     name: 'xterm-256color',
     cols: Math.max(20, opts.cols ?? 120),
     rows: Math.max(5, opts.rows ?? 36),
     cwd: opts.cwd,
-    env: spawnEnv(hookEnv(opts.sessionId))
+    env
   })
 
   const r: Running = {

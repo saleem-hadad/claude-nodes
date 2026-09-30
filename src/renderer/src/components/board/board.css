@@ -169,6 +169,17 @@ kbd {
   color: var(--text-tertiary);
 }
 
+/* Terminal cards show a shell glyph where Claude cards show a status dot. */
+.card-shell {
+  flex: none;
+  display: inline-flex;
+  margin-top: 3px;
+  color: var(--text-tertiary);
+}
+.card-shell[data-live='true'] {
+  color: var(--text-primary);
+}
+
 .card-chip {
   display: inline-flex;
   align-items: center;
@@ -205,6 +216,11 @@ kbd {
 .card-preview.is-empty {
   color: var(--text-tertiary);
 }
+.card-preview.is-path {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  -webkit-line-clamp: 2;
+}
 
 .card-foot {
   display: flex;
@@ -237,17 +253,17 @@ kbd {
 
 /* ----------------------------------------------------------- archive zone */
 
-/* The archive body lets clicks and box-selection fall through to the canvas;
-   only its header (drag handle) and resize controls are interactive. */
+/* The archive is a compact frame around its stack that opens into a floating
+   panel; it eases between the two sizes. Its header is the drag handle. */
 .board-canvas .react-flow__node-archive {
-  pointer-events: none !important;
   cursor: default;
-}
-.board-canvas .react-flow__node-archive .react-flow__resize-control {
-  pointer-events: all;
+  transition:
+    width 460ms var(--ease-out),
+    height 460ms var(--ease-out);
 }
 
 .archive-zone {
+  position: relative;
   width: 100%;
   height: 100%;
   border-radius: 24px;
@@ -255,7 +271,8 @@ kbd {
   background: var(--archive-bg);
   transition:
     background var(--dur-med) ease,
-    border-color var(--dur-med) ease;
+    border-color var(--dur-med) ease,
+    box-shadow 320ms var(--ease-out);
 }
 .archive-zone.is-hot {
   border-style: solid;
@@ -309,21 +326,298 @@ kbd {
   opacity: 1;
 }
 
-.board-canvas .react-flow__resize-control.handle.archive-resize-handle {
-  width: 10px;
-  height: 10px;
-  border-radius: 3px;
-  border: 1px solid var(--archive-border);
-  background: var(--bg-elevated);
-  opacity: 0.7;
-  transition: opacity var(--dur-fast) ease;
+/* ---------------------------------------------------------- archive stack */
+
+/* Cards glide whenever the board moves them (archiving, restoring, the stack
+   dealing them out); a card being dragged follows the pointer directly. */
+.board-canvas .react-flow__node-session {
+  transition: transform 420ms var(--ease-out);
 }
-.board-canvas .react-flow__resize-control.handle.archive-resize-handle:hover {
+.board-canvas .react-flow__node-session.is-result {
+  transition: transform 620ms var(--ease-stack) calc(var(--stack-i, 0) * 30ms);
+}
+.board-canvas .react-flow__node-session.dragging,
+.board-canvas.is-moving-archive .react-flow__node-session {
+  transition: none;
+}
+
+.archive-zone.is-open {
+  border-style: solid;
+  border-color: var(--border);
+  background: var(--archive-panel);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(30px) saturate(1.8);
+}
+
+/* The stack: every card sits at the same spot; the two behind the top one
+   shrink and peek out below it as plain slabs, like grouped notifications. */
+.react-flow__node.stack-card .session-card {
+  transform-origin: 50% 100%;
+  transition:
+    transform 560ms var(--ease-stack),
+    opacity 260ms ease,
+    filter 260ms ease,
+    box-shadow var(--dur-med) var(--ease-out);
+}
+.react-flow__node.stack-card:not(.stack-d3) .session-card.is-archived {
   opacity: 1;
-  border-color: var(--accent);
 }
-.board-canvas .react-flow__resize-control.line.archive-resize-line {
-  border-color: transparent;
+.react-flow__node.stack-card .session-card > * {
+  transition: opacity 200ms ease;
+}
+.react-flow__node.stack-d1 .session-card {
+  transform: translateY(10px) scale(0.94);
+  filter: brightness(0.955);
+}
+.react-flow__node.stack-d2 .session-card {
+  transform: translateY(20px) scale(0.88);
+  filter: brightness(0.91);
+}
+.react-flow__node.stack-d3 .session-card {
+  transform: translateY(20px) scale(0.84);
+  opacity: 0;
+}
+.react-flow__node.stack-d1 .session-card > *,
+.react-flow__node.stack-d2 .session-card > *,
+.react-flow__node.stack-d3 .session-card > * {
+  opacity: 0;
+}
+/* Hovering the stack (or dragging a card over it) fans it slightly. */
+.board-canvas.stack-lift .react-flow__node.stack-d0 .session-card {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md);
+}
+.board-canvas.stack-lift .react-flow__node.stack-d1 .session-card {
+  transform: translateY(14px) scale(0.94);
+}
+.board-canvas.stack-lift .react-flow__node.stack-d2 .session-card {
+  transform: translateY(28px) scale(0.88);
+}
+/* Only the top card and the results take the pointer; the rest is the frame's. */
+.board-canvas .react-flow__node.stack-card:not(.is-result):not(.stack-d0) {
+  pointer-events: none !important;
+}
+
+/* A card that was hidden deep in the stack flies out from the top of it. */
+.react-flow__node.stack-enter .session-card {
+  animation: stack-rise 620ms var(--ease-stack) calc(var(--stack-i, 0) * 30ms) backwards;
+}
+@keyframes stack-rise {
+  from {
+    transform: translate(var(--fly-x), var(--fly-y)) scale(0.88);
+    opacity: 0;
+  }
+}
+
+.archive-search {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 9px 0 11px;
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm);
+  color: var(--text-tertiary);
+  opacity: 0;
+  transform: translateY(-6px) scale(0.97);
+  pointer-events: none;
+  cursor: text;
+  transition:
+    opacity 180ms ease,
+    transform 360ms var(--ease-stack),
+    box-shadow var(--dur-fast) ease;
+}
+.archive-zone.is-searching .archive-search {
+  opacity: 1;
+  transform: none;
+  pointer-events: all;
+}
+.archive-search:focus-within {
+  box-shadow:
+    0 0 0 3px var(--focus-ring),
+    var(--shadow-sm);
+}
+.archive-search-icon {
+  flex: none;
+}
+.archive-search input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  outline: none;
+  font-size: var(--text-md);
+  color: var(--text-primary);
+}
+.archive-search input::placeholder {
+  color: var(--text-tertiary);
+}
+.archive-search-clear {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+  color: var(--bg-elevated);
+  cursor: default;
+}
+
+.archive-placeholder {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-lg);
+  border: 1.5px dashed var(--archive-border);
+  color: var(--archive-label);
+  font-size: var(--text-sm);
+  pointer-events: none;
+}
+
+.archive-divider {
+  position: absolute;
+  width: 1px;
+  background: var(--separator);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-med) ease;
+}
+.archive-zone.is-open .archive-divider {
+  opacity: 1;
+  transition-delay: 120ms;
+}
+
+.archive-empty {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--text-md);
+  text-align: center;
+  animation: archive-fade 240ms ease 160ms backwards;
+}
+@keyframes archive-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.card-title-match {
+  background: none;
+  color: var(--accent);
+}
+
+/* --------------------------------------------------------------- sections */
+
+/* A section's frame wraps its cards and glides with them as they move. Only
+   its header (the drag handle) takes the pointer: clicks, double-clicks and
+   box-selection inside the frame reach the canvas. */
+.board-canvas .react-flow__node-section {
+  pointer-events: none !important;
+  cursor: default;
+  transition:
+    transform 420ms var(--ease-out),
+    width 420ms var(--ease-out),
+    height 420ms var(--ease-out);
+}
+.board-canvas .react-flow__node-section.dragging,
+.board-canvas.is-moving-section .react-flow__node-session {
+  transition: none;
+}
+
+.section-zone {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 22px;
+  border: 1.5px solid color-mix(in srgb, var(--section-hue) 30%, transparent);
+  background: color-mix(in srgb, var(--section-hue) 6%, transparent);
+  transition:
+    background var(--dur-med) ease,
+    border-color var(--dur-med) ease;
+}
+.section-zone.is-hot {
+  border-color: var(--section-hue);
+  background: color-mix(in srgb, var(--section-hue) 12%, transparent);
+}
+
+.section-header {
+  pointer-events: all;
+  display: flex;
+  align-items: center;
+  height: 44px;
+  padding: 0 18px;
+  border-radius: 22px 22px 0 0;
+  /* Tinted toward the text colour so every hue stays readable in both themes. */
+  color: color-mix(in srgb, var(--section-hue) 68%, var(--text-primary));
+  cursor: grab;
+}
+.section-zone.is-dragging .section-header {
+  cursor: grabbing;
+}
+.section-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  transform-origin: left center;
+  font-size: var(--text-md);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+.section-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.section-name.is-untitled {
+  font-weight: 500;
+  opacity: 0.7;
+}
+.section-name-input {
+  min-width: 0;
+  height: 24px;
+  margin: -2px 0;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--bg-window);
+  box-shadow: 0 0 0 2px var(--section-hue);
+  color: var(--text-primary);
+  font: inherit;
+  outline: none;
+}
+.section-count {
+  flex: none;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--section-hue) 14%, transparent);
+  font-size: var(--text-xs);
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+}
+.section-label .status-dot {
+  width: 8px;
+  height: 8px;
+}
+
+.section-placeholder {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-lg);
+  border: 1.5px dashed color-mix(in srgb, var(--section-hue) 35%, transparent);
+  color: color-mix(in srgb, var(--section-hue) 55%, var(--text-tertiary));
+  font-size: var(--text-sm);
+  pointer-events: none;
 }
 
 /* ------------------------------------------------------------------ edges */

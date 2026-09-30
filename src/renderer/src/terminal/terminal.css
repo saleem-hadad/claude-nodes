@@ -73,6 +73,26 @@
   font-family: var(--font-mono);
 }
 
+.term-shell-icon {
+  color: var(--text-tertiary);
+}
+.term-shell-icon[data-live='true'] {
+  color: var(--text-secondary);
+}
+
+.term-cwd {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  font-family: var(--font-mono);
+}
+.term-cwd-path {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .term-id {
   display: inline-flex;
   align-items: center;

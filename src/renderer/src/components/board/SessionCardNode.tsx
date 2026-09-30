@@ -1,13 +1,17 @@
-import { memo, useContext, useEffect, useRef, useState } from 'react'
+import { memo, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
 import { GitBranch, GitMerge, MessageSquare, SquareTerminal } from 'lucide-react'
 import clsx from 'clsx'
 import type { SessionCard } from '@shared/types'
-import { cardTitle } from '@renderer/store'
+import { cardTitle, isTerminal, tildePath, useApp } from '@renderer/store'
 import { RenamingContext, useBoardActions } from './BoardContext'
 import { timeAgo } from './layout'
 
-export type SessionNodeData = { card: SessionCard }
+export type SessionNodeData = {
+  card: SessionCard
+  /** Title characters matched by the archive search, highlighted. */
+  match?: number[]
+}
 export type SessionFlowNode = Node<SessionNodeData, 'session'>
 
 const STATUS_LABEL = {
@@ -19,12 +23,16 @@ const STATUS_LABEL = {
 function SessionCardNodeComponent({ data, selected, dragging }: NodeProps<SessionFlowNode>) {
   const { card } = data
   const renaming = useContext(RenamingContext) === card.sessionId
+  const repoPath = useApp((s) => s.board?.project.repoPath)
   const meta = card.meta
   const title = cardTitle(card)
   const updated = meta?.updatedAt ?? card.createdAt
+  const shell = isTerminal(card)
+  const statusLabel = shell ? (card.live ? 'Running' : 'Exited') : STATUS_LABEL[card.status]
 
-  let preview: { text: string; kind: 'reply' | 'prompt' | 'empty' }
-  if (meta?.lastAssistantText) preview = { text: stripMarkdown(meta.lastAssistantText), kind: 'reply' }
+  let preview: { text: string; kind: 'reply' | 'prompt' | 'empty' | 'path' }
+  if (shell) preview = { text: repoPath ? tildePath(repoPath) : '', kind: 'path' }
+  else if (meta?.lastAssistantText) preview = { text: stripMarkdown(meta.lastAssistantText), kind: 'reply' }
   else if (meta?.firstPrompt) preview = { text: meta.firstPrompt, kind: 'prompt' }
   else preview = { text: 'No messages yet', kind: 'empty' }
 
@@ -32,30 +40,33 @@ function SessionCardNodeComponent({ data, selected, dragging }: NodeProps<Sessio
     <div
       className={clsx(
         'session-card',
+        shell && 'is-terminal',
         card.archived && 'is-archived',
         selected && 'is-selected',
         dragging && 'is-dragging'
       )}
       data-status={card.status}
-      aria-label={`${title}, ${STATUS_LABEL[card.status]}`}
+      aria-label={`${title}, ${statusLabel}`}
     >
       <Handle type="target" position={Position.Top} isConnectable={false} className="card-handle" />
       <Handle type="source" position={Position.Bottom} isConnectable={false} className="card-handle" />
 
       <header className="card-head">
-        <span
-          className="status-dot"
-          data-status={card.status}
-          title={STATUS_LABEL[card.status]}
-        />
+        {shell ? (
+          <span className="card-shell" data-live={card.live} title={`Terminal · ${statusLabel}`}>
+            <SquareTerminal size={14} strokeWidth={2} />
+          </span>
+        ) : (
+          <span className="status-dot" data-status={card.status} title={statusLabel} />
+        )}
         {renaming ? (
           <TitleEditor sessionId={card.sessionId} initial={card.title || meta?.title || ''} />
         ) : (
           <h3 className="card-title" title={title}>
-            {title}
+            {data.match?.length ? highlight(title, data.match) : title}
           </h3>
         )}
-        {card.live && (
+        {card.live && !shell && (
           <span className="card-live" title="Claude process running">
             <SquareTerminal size={13} strokeWidth={2} />
           </span>
@@ -84,6 +95,7 @@ function SessionCardNodeComponent({ data, selected, dragging }: NodeProps<Sessio
             {meta.messageCount}
           </span>
         )}
+        {shell && <span className="card-foot-item">{statusLabel}</span>}
         <span className="card-foot-item card-time">{timeAgo(updated)}</span>
       </footer>
     </div>
@@ -132,6 +144,22 @@ function TitleEditor({ sessionId, initial }: { sessionId: string; initial: strin
 }
 
 export const SessionCardNode = memo(SessionCardNodeComponent)
+
+/** Wraps each run of matched characters in a <mark>. */
+function highlight(text: string, indices: number[]): ReactNode[] {
+  const hit = new Set(indices)
+  const parts: ReactNode[] = []
+  let start = 0
+  while (start < text.length) {
+    const on = hit.has(start)
+    let end = start + 1
+    while (end < text.length && hit.has(end) === on) end++
+    const run = text.slice(start, end)
+    parts.push(on ? <mark key={start} className="card-title-match">{run}</mark> : run)
+    start = end
+  }
+  return parts
+}
 
 /** Card previews are plain text: drop the markdown syntax Claude replies with. */
 function stripMarkdown(text: string): string {

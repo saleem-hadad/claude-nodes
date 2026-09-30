@@ -6,12 +6,26 @@ export const CARD_W = 288
 export const CARD_H = 216
 export const GAP = 32
 
+/**
+ * The archive is a single stack of cards anchored at the archive's corner (its
+ * stored x/y). Its search fans matching cards out into a panel beside it.
+ */
 export const ARCHIVE_ID = '__archive__'
-export const ARCHIVE_MIN_W = 600
-export const ARCHIVE_MIN_H = 400
-/** Height of the archive header strip; cards are never placed under it. */
+/** Height of the archive header strip. */
 export const ARCHIVE_HEADER_H = 52
-const ARCHIVE_PAD = 28
+export const ARCHIVE_PAD = 28
+
+/** Most cards the stack's search fans out at once (a 2×2 grid). */
+export const STACK_RESULTS = 4
+/** Cards drawn in the folded stack: the top one plus two peeking out behind it. */
+export const STACK_DEPTH = 3
+/** The search field sits under the stack, below the peeking cards. */
+export const STACK_SEARCH_Y = ARCHIVE_HEADER_H + CARD_H + 38
+export const STACK_SEARCH_H = 34
+/** Where the fanned-out results start, relative to the archive's corner. */
+export const STACK_RESULTS_X = ARCHIVE_PAD + CARD_W + 40
+const STACK_W = ARCHIVE_PAD * 2 + CARD_W
+const STACK_H = STACK_SEARCH_Y + STACK_SEARCH_H + 22
 
 export interface Point {
   x: number
@@ -41,15 +55,21 @@ export function isInArchive(position: Point, archive: Rect): boolean {
 }
 
 /**
- * Finds a free spot for a card near `preferred` that overlaps neither the given
- * obstacles nor (optionally) the archive zone. It searches rings of grid cells
- * around the preferred position, closest first.
+ * Finds a free spot for a card (or anything of `size`) near `preferred` that
+ * overlaps neither the given obstacles nor (optionally) the archive zone. It
+ * searches rings of card-sized grid cells around the preferred position,
+ * closest first.
  */
-export function findFreeSpot(preferred: Point, obstacles: Rect[], avoid?: Rect): Point {
+export function findFreeSpot(
+  preferred: Point,
+  obstacles: Rect[],
+  avoid?: Rect,
+  size = { w: CARD_W, h: CARD_H }
+): Point {
   const stepX = CARD_W + GAP
   const stepY = CARD_H + GAP
   const blocked = (p: Point) => {
-    const r = cardRect(p)
+    const r = { ...p, ...size }
     if (avoid && intersects(r, avoid, GAP)) return true
     return obstacles.some((o) => intersects(r, o, GAP / 2))
   }
@@ -84,40 +104,36 @@ export function cardObstacles(cards: SessionCard[], exclude: Set<string> = new S
 }
 
 /**
- * Finds free slots inside the archive zone for `count` cards, scanning its grid
- * row by row. If the zone is full, it grows the zone downwards.
+ * The archive as drawn: the stack, or with `results` (the panel is open) the
+ * panel holding that many fanned-out cards, two per row.
  */
-export function archiveSlots(
-  archive: Rect,
-  cards: SessionCard[],
-  count: number,
-  exclude: Set<string>
-): { slots: Point[]; archive: Rect } {
-  const obstacles = cardObstacles(
-    cards.filter((c) => c.archived),
-    exclude
-  )
-  const slots: Point[] = []
-  const stepX = CARD_W + GAP
-  const stepY = CARD_H + GAP
-  const cols = Math.max(1, Math.floor((archive.w - ARCHIVE_PAD * 2 + GAP) / stepX))
-  let next = { ...archive }
-
-  for (let row = 0; slots.length < count && row < 500; row++) {
-    for (let col = 0; col < cols && slots.length < count; col++) {
-      const p = {
-        x: archive.x + ARCHIVE_PAD + col * stepX,
-        y: archive.y + ARCHIVE_HEADER_H + row * stepY
-      }
-      const r = cardRect(p)
-      if (obstacles.some((o) => intersects(r, o, GAP / 2 - 1))) continue
-      slots.push(p)
-      obstacles.push(r)
-      const bottom = p.y + CARD_H + ARCHIVE_PAD
-      if (bottom > next.y + next.h) next = { ...next, h: bottom - next.y }
-    }
+export function stackZone(archive: Rect, results?: number): Rect {
+  if (results === undefined) return { x: archive.x, y: archive.y, w: STACK_W, h: STACK_H }
+  const cols = results > 1 ? 2 : 1
+  const rows = results > 2 ? 2 : 1
+  return {
+    x: archive.x,
+    y: archive.y,
+    w: STACK_RESULTS_X + cols * CARD_W + (cols - 1) * GAP + ARCHIVE_PAD,
+    h: Math.max(STACK_H, ARCHIVE_HEADER_H + rows * CARD_H + (rows - 1) * GAP + ARCHIVE_PAD)
   }
-  return { slots, archive: next }
+}
+
+/** Where every card in the stack sits; depth is drawn by the card itself. */
+export function stackTop(archive: Rect): Point {
+  return { x: archive.x + ARCHIVE_PAD, y: archive.y + ARCHIVE_HEADER_H }
+}
+
+export function stackResultSpot(archive: Rect, slot: number): Point {
+  return {
+    x: archive.x + STACK_RESULTS_X + (slot % 2) * (CARD_W + GAP),
+    y: archive.y + ARCHIVE_HEADER_H + Math.floor(slot / 2) * (CARD_H + GAP)
+  }
+}
+
+/** Stack order: most recently archived or active first. */
+export function stackRank(card: SessionCard): number {
+  return Math.max(card.archivedAt ?? 0, card.meta?.updatedAt ?? card.createdAt)
 }
 
 /** A spot just right of the archive zone, clear of other cards. */

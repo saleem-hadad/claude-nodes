@@ -37,7 +37,9 @@ Claude Nodes puts each session on a canvas as a card. Every card shows what Clau
 
 **The real terminal.** Clicking an active card opens the actual `claude` TUI in a modal. Close the modal and the session keeps running in the background. Reopen it and the scrollback is still there.
 
-**An archive, not a graveyard.** Existing sessions for the repo are imported into an archive zone. Click an archived card to read its transcript, or drag it back onto the canvas to pick it up again. Drag a card into the archive to stop its process.
+**Plain terminals too.** Need a shell for a quick `git` or `npm` command? Click *Terminal* in the title bar (or press **T**) for a card running your login shell in the project folder. Terminal cards live on the board next to your sessions but never go to the archive. Remove one when you're done with it.
+
+**An archive, not a graveyard.** Existing sessions for the repo are imported into an archive zone. Click an archived card to read its transcript, or drag it back onto the canvas to pick it up again. Drag a card into the archive to stop its process. Archived cards pile up in a single stack, most recent on top: hover it and type to fuzzy-search session titles, or click it to fan out the four most recent. Esc or a click elsewhere folds them back.
 
 **New session from context.** Select one or more cards and choose *New session from context*. Each session writes a handoff summary in a forked, throwaway copy, so the originals are untouched. You review and edit the combined context, say what the new session should do, and it starts with all of it. Dashed lineage lines connect the new card to its sources.
 
@@ -77,12 +79,14 @@ Then:
 | | Rename · remove | Enter · ⌘⌫ |
 | | Color, Reveal in Finder | Right-click |
 | Board | New session | N · ⌘N · double-click empty canvas |
+| | New terminal in the project folder | T · ⌘T |
 | | Open a card | Click · Enter |
 | | Select | Drag on empty canvas · ⇧-click · ⌘-click · ⌘A (all active) |
 | | Archive the selection | ⌫ |
+| | Search the archive | Hover the stack and type · Esc |
 | | Rename a card | Double-click its title |
 | | Pan · zoom | Two-finger scroll, Space-drag or middle-drag · pinch |
-| Terminal | Newline in the prompt | ⇧Enter |
+| Terminal | Newline in Claude's prompt | ⇧Enter |
 | | Clear · copy · select all | ⌘K · ⌘C · ⌘A |
 | New session from context | Start | ⌘Enter |
 
@@ -109,6 +113,8 @@ flowchart LR
 ```
 
 **Sessions** are ordinary Claude Code sessions. New cards run `claude --session-id <uuid>`, and resuming runs `claude --resume <id>`, so the same session can be continued from any terminal later. Your own settings, hooks and MCP servers still apply.
+
+**Terminal cards** run `$SHELL -l` in the repo folder with your login-shell environment. They get no hooks and have no transcript, so they have no status dot. A terminal whose shell has exited starts a fresh shell when you reopen it.
 
 **Status** comes from hooks that the app adds for its own processes with `--settings`. Each hook POSTs its payload to a token-protected server on 127.0.0.1:
 

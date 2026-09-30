@@ -96,11 +96,17 @@ export function loadBoard(project: Project): BoardSnapshot {
   importSessions(board, fresh)
   growArchive(board)
 
+  // Only active cards belong to a section, and only to one that still exists.
+  for (const node of Object.values(board.nodes)) {
+    if (node.sectionId && (node.archived || !board.sections![node.sectionId])) delete node.sectionId
+  }
+
   project.openedAt = Date.now()
   save()
 
   const cards = Object.values(board.nodes).map((node) => toCard(node, disk.get(node.sessionId)))
-  return { project, cards, archive: board.archive, viewport: board.viewport }
+  const sections = Object.values(board.sections!).sort((a, b) => a.createdAt - b.createdAt)
+  return { project, cards, archive: board.archive, sections, viewport: board.viewport }
 }
 
 export function projectStats(project: Project): ProjectStats {

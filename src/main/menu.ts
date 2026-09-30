@@ -26,6 +26,7 @@ export function installMenu(send: (command: MenuCommand) => void) {
       label: 'File',
       submenu: [
         { label: 'New Session', accelerator: 'CmdOrCtrl+N', click: () => send('new-session') },
+        { label: 'New Terminal', accelerator: 'CmdOrCtrl+T', click: () => send('new-terminal') },
         { label: 'New Project…', accelerator: 'CmdOrCtrl+Shift+N', click: () => send('new-project') },
         { type: 'separator' },
         { label: 'Close', accelerator: 'CmdOrCtrl+W', click: () => send('close') }

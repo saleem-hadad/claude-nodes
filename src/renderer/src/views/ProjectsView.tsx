@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
-import clsx from 'clsx'
-import { Check, FolderOpen, FolderPlus, Pencil, Plus, Search, Trash2 } from 'lucide-react'
+import { FolderOpen, FolderPlus, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import type { FolderColor, Project } from '@shared/types'
 import { useApp } from '@renderer/store'
 import { ContextMenu, type MenuItem } from '@renderer/components/ContextMenu'
 import { Modal } from '@renderer/components/Modal'
 import { TitleBarActions } from '@renderer/components/TitleBarActions'
-import { FOLDER_COLORS, FOLDER_HUES, FolderIcon } from '@renderer/components/FolderIcon'
+import { FolderIcon } from '@renderer/components/FolderIcon'
+import { ColorSwatches } from '@renderer/components/ColorSwatches'
 import { FolderItem } from '@renderer/components/projects/FolderItem'
 import {
   addProject,
@@ -203,6 +203,7 @@ export function ProjectsView() {
           custom: (
             <ColorSwatches
               value={menuProject.color}
+              label="Folder colour"
               onPick={(color) => {
                 setMenu(null)
                 setColor(menuProject.id, color)
@@ -340,33 +341,6 @@ function EmptyState() {
   )
 }
 
-function ColorSwatches({
-  value,
-  onPick
-}: {
-  value: FolderColor
-  onPick: (color: FolderColor) => void
-}) {
-  return (
-    <div className="pv-swatches" role="group" aria-label="Folder colour">
-      {FOLDER_COLORS.map((color) => (
-        <button
-          key={color}
-          className={clsx('pv-swatch', color === value && 'is-current')}
-          style={{
-            background: `linear-gradient(${FOLDER_HUES[color].frontTop}, ${FOLDER_HUES[color].frontBottom})`
-          }}
-          title={color[0].toUpperCase() + color.slice(1)}
-          aria-label={color}
-          aria-pressed={color === value}
-          onClick={() => onPick(color)}
-        >
-          {color === value && <Check size={10} strokeWidth={3.5} />}
-        </button>
-      ))}
-    </div>
-  )
-}
 
 /** Number of items in the first row of the grid. */
 function gridColumns(grid: HTMLElement | null): number {

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type {
+  BoardSection,
   BoardSnapshot,
   NodePatch,
   Project,
@@ -37,6 +38,10 @@ interface AppState {
   upsertCard(card: SessionCard): void
   removeCard(sessionId: string): Promise<void>
   setArchive(rect: Rect): void
+  /** Creates or updates a section and persists it. */
+  saveSection(section: BoardSection): void
+  /** Deletes a section; its cards stay on the board, ungrouped. */
+  removeSection(sectionId: string): void
   setStatus(sessionId: string, status: SessionStatus, live: boolean): void
 
   openTerminal(sessionId: string): void
@@ -99,9 +104,14 @@ export const useApp = create<AppState>((set, get) => ({
         cards: board.cards.map((c) => {
           const p = byId.get(c.sessionId)
           if (!p) return c
-          const next = { ...c, ...p }
+          const { sectionId, ...rest } = p
+          const next: SessionCard = { ...c, ...rest }
+          if (sectionId !== undefined) next.sectionId = sectionId ?? undefined
           // Archived sessions always read as done.
           if (p.archived) next.status = 'done'
+          if (p.archived && !c.archived) next.archivedAt = Date.now()
+          // …and leave their section.
+          if (next.archived) next.sectionId = undefined
           return next
         })
       }
@@ -141,6 +151,34 @@ export const useApp = create<AppState>((set, get) => ({
     window.api.board.saveArchive(board.project.id, rect)
   },
 
+  saveSection(section) {
+    const board = get().board
+    if (!board) return
+    const exists = board.sections.some((s) => s.id === section.id)
+    set({
+      board: {
+        ...board,
+        sections: exists
+          ? board.sections.map((s) => (s.id === section.id ? section : s))
+          : [...board.sections, section]
+      }
+    })
+    window.api.board.saveSection(board.project.id, section)
+  },
+
+  removeSection(sectionId) {
+    const board = get().board
+    if (!board) return
+    set({
+      board: {
+        ...board,
+        sections: board.sections.filter((s) => s.id !== sectionId),
+        cards: board.cards.map((c) => (c.sectionId === sectionId ? { ...c, sectionId: undefined } : c))
+      }
+    })
+    window.api.board.removeSection(board.project.id, sectionId)
+  },
+
   setStatus(sessionId, status, live) {
     const board = get().board
     if (!board) return
@@ -170,7 +208,16 @@ export function useCard(sessionId: string | null): SessionCard | undefined {
   )
 }
 
+export function isTerminal(card: SessionCard | undefined): boolean {
+  return card?.kind === 'terminal'
+}
+
+/** Abbreviates the home directory to ~, as a shell prompt does. */
+export function tildePath(path: string): string {
+  return path.replace(/^\/(Users|home)\/[^/]+(?=\/|$)/, '~')
+}
+
 /** Title shown for a card: user override > transcript title > placeholder. */
 export function cardTitle(card: SessionCard | undefined): string {
-  return card?.title || card?.meta?.title || 'New session'
+  return card?.title || card?.meta?.title || (isTerminal(card) ? 'Terminal' : 'New session')
 }

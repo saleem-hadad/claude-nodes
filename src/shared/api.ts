@@ -3,6 +3,7 @@
 // exactly these channels.
 import type {
   AppInfo,
+  BoardSection,
   BoardSnapshot,
   CreateSessionOptions,
   FolderColor,
@@ -34,6 +35,8 @@ export const IPC = {
   boardSaveArchive: 'board:save-archive',
   boardSaveViewport: 'board:save-viewport',
   boardRemoveNode: 'board:remove-node',
+  boardSaveSection: 'board:save-section',
+  boardRemoveSection: 'board:remove-section',
 
   sessionCreate: 'session:create',
   sessionOpen: 'session:open',
@@ -56,10 +59,11 @@ export const IPC = {
  * Commands sent from the native application menu. The menu owns the
  * shortcuts so they work even while a terminal has keyboard focus.
  * - close:       Cmd+W — closes the open modal, else goes back to projects (never closes the window)
- * - new-session: Cmd+N — new Claude session on the open board
- * - new-project: Cmd+Shift+N — add a project folder
+ * - new-session:  Cmd+N — new Claude session on the open board
+ * - new-terminal: Cmd+T — new shell in the project folder on the open board
+ * - new-project:  Cmd+Shift+N — add a project folder
  */
-export type MenuCommand = 'close' | 'new-session' | 'new-project'
+export type MenuCommand = 'close' | 'new-session' | 'new-terminal' | 'new-project'
 
 export type Unsubscribe = () => void
 
@@ -93,12 +97,19 @@ export interface Api {
     saveViewport(projectId: string, viewport: Viewport): Promise<void>
     /** Removes a card from the board (the transcript on disk is untouched). */
     removeNode(projectId: string, sessionId: string): Promise<void>
+    /** Creates or updates a section. Cards join it through saveNodes' sectionId. */
+    saveSection(projectId: string, section: BoardSection): Promise<void>
+    /** Deletes a section; its cards stay where they are, ungrouped. */
+    removeSection(projectId: string, sectionId: string): Promise<void>
   }
 
   sessions: {
-    /** Creates a card and starts a new `claude` process for it. */
+    /** Creates a card and starts a new `claude` process (or shell, for terminals) for it. */
     create(projectId: string, opts: CreateSessionOptions): Promise<SessionCard>
-    /** Ensures a process is running (resuming if needed) and returns output to replay. */
+    /**
+     * Ensures a process is running (resuming a Claude session, or starting a
+     * fresh shell for a terminal) and returns output to replay.
+     */
     open(projectId: string, sessionId: string, cols: number, rows: number): Promise<OpenSessionResult>
     write(sessionId: string, data: string): void
     resize(sessionId: string, cols: number, rows: number): void

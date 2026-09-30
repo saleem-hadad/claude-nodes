@@ -7,6 +7,7 @@ import { IPC } from '@shared/api'
 import type {
   AppInfo,
   BoardNode,
+  BoardSection,
   CreateSessionOptions,
   FolderColor,
   NodePatch,
@@ -158,11 +159,44 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
       if (typeof patch.x === 'number' && Number.isFinite(patch.x)) node.x = patch.x
       if (typeof patch.y === 'number' && Number.isFinite(patch.y)) node.y = patch.y
       if (typeof patch.title === 'string') node.title = patch.title.trim() || undefined
-      if (typeof patch.archived === 'boolean') {
+      // Terminals have no transcript to keep, so they are removed instead of archived.
+      if (typeof patch.archived === 'boolean' && node.kind !== 'terminal') {
         // Archiving stops the session's process.
-        if (patch.archived && !node.archived) ptys.kill(node.sessionId)
+        if (patch.archived && !node.archived) {
+          ptys.kill(node.sessionId)
+          node.archivedAt = Date.now()
+        }
         node.archived = patch.archived
       }
+      if (patch.sectionId === null) delete node.sectionId
+      else if (typeof patch.sectionId === 'string' && board.sections![patch.sectionId]) {
+        node.sectionId = patch.sectionId
+      }
+      // An archived card leaves its section.
+      if (node.archived) delete node.sectionId
+    }
+    save()
+  })
+
+  ipcMain.handle(IPC.boardSaveSection, (_e, projectId: string, section: BoardSection) => {
+    if (typeof section?.id !== 'string' || !Number.isFinite(section.x) || !Number.isFinite(section.y)) return
+    const board = getBoard(projectId)
+    board.sections![section.id] = {
+      id: section.id,
+      name: typeof section.name === 'string' ? section.name.trim() : '',
+      color: FOLDER_COLORS.includes(section.color) ? section.color : 'blue',
+      x: section.x,
+      y: section.y,
+      createdAt: board.sections![section.id]?.createdAt ?? Date.now()
+    }
+    save()
+  })
+
+  ipcMain.handle(IPC.boardRemoveSection, (_e, projectId: string, sectionId: string) => {
+    const board = getBoard(projectId)
+    delete board.sections![sectionId]
+    for (const node of Object.values(board.nodes)) {
+      if (node.sectionId === sectionId) delete node.sectionId
     }
     save()
   })
@@ -179,8 +213,10 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
 
   ipcMain.handle(IPC.boardRemoveNode, async (_e, projectId: string, sessionId: string) => {
     const board = getBoard(projectId)
+    const isTerminal = board.nodes[sessionId]?.kind === 'terminal'
     delete board.nodes[sessionId]
-    if (!board.hidden!.includes(sessionId)) board.hidden!.push(sessionId)
+    // Terminals are never discovered on disk, so there is nothing to hide.
+    if (!isTerminal && !board.hidden!.includes(sessionId)) board.hidden!.push(sessionId)
     save()
     await ptys.kill(sessionId)
     forgetStatus(sessionId)
@@ -195,13 +231,15 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
       const project = getProject(projectId)
       const board = getBoard(projectId)
       const sessionId = crypto.randomUUID()
+      const terminal = opts.kind === 'terminal'
       const node: BoardNode = {
         sessionId,
+        kind: terminal ? 'terminal' : undefined,
         x: opts.x,
         y: opts.y,
         archived: false,
         title: opts.name?.trim() || undefined,
-        parents: opts.parents?.length ? opts.parents : undefined,
+        parents: !terminal && opts.parents?.length ? opts.parents : undefined,
         createdByApp: true,
         createdAt: Date.now()
       }
@@ -211,9 +249,10 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
           sessionId,
           projectId,
           cwd: project.repoPath,
+          kind: node.kind,
           resume: false,
-          name: opts.name?.trim() || undefined,
-          initialPrompt: opts.initialPrompt?.trim() || undefined
+          name: terminal ? undefined : opts.name?.trim() || undefined,
+          initialPrompt: terminal ? undefined : opts.initialPrompt?.trim() || undefined
         })
       } catch (err) {
         delete board.nodes[sessionId]
@@ -237,6 +276,8 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
         sessionId,
         projectId,
         cwd: project.repoPath,
+        // A terminal whose shell exited always starts a fresh one.
+        kind: getBoard(projectId).nodes[sessionId]?.kind,
         // A card created in the app but never used has no transcript to resume.
         resume: hasTranscript(project, sessionId),
         cols,

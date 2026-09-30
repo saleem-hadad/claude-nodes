@@ -12,6 +12,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebLinksAddon } from '@xterm/addon-web-links'
+import type { SessionKind } from '@shared/types'
 
 /**
  * - opening: sessions.open() is in flight; live data is covered by its replay
@@ -21,6 +22,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 type EntryState = 'opening' | 'ready' | 'exited'
 
 interface Entry {
+  kind: SessionKind
   term: Terminal
   fit: FitAddon
   host: HTMLDivElement
@@ -34,7 +36,10 @@ interface Entry {
 
 const entries = new Map<string, Entry>()
 
-const EXIT_LINE = '\r\n\x1b[2m[process exited · press Resume or reopen the card to continue]\x1b[0m\r\n'
+const EXIT_LINE: Record<SessionKind, string> = {
+  claude: '\r\n\x1b[2m[process exited · press Resume or reopen the card to continue]\x1b[0m\r\n',
+  terminal: '\r\n\x1b[2m[shell exited · press Restart or reopen the card for a new shell]\x1b[0m\r\n'
+}
 
 export const TERMINAL_THEME: ITheme = {
   background: '#1e1e20',
@@ -115,7 +120,7 @@ function writeOutput(entry: Entry, data: string) {
 }
 
 function markExited(entry: Entry) {
-  entry.term.write(EXIT_LINE)
+  entry.term.write(EXIT_LINE[entry.kind])
   entry.state = 'exited'
 }
 
@@ -124,7 +129,7 @@ function shellQuote(path: string): string {
   return `'${path.replace(/'/g, `'\\''`)}'`
 }
 
-function createEntry(sessionId: string, container: HTMLElement): Entry {
+function createEntry(sessionId: string, kind: SessionKind, container: HTMLElement): Entry {
   const host = document.createElement('div')
   host.className = 'term-host'
   // xterm measures its parent on open(), so the host must be laid out first.
@@ -161,6 +166,7 @@ function createEntry(sessionId: string, container: HTMLElement): Entry {
   }
 
   const entry: Entry = {
+    kind,
     term,
     fit,
     host,
@@ -174,8 +180,15 @@ function createEntry(sessionId: string, container: HTMLElement): Entry {
   term.attachCustomKeyEventHandler((ev) => {
     // Shift+Enter inserts a newline in Claude's prompt (same sequence
     // `/terminal-setup` configures for other terminals). Swallow the
-    // keypress too so a plain Enter is never sent.
-    if (ev.key === 'Enter' && ev.shiftKey && !ev.metaKey && !ev.ctrlKey && !ev.altKey) {
+    // keypress too so a plain Enter is never sent. A shell gets plain Enter.
+    if (
+      kind === 'claude' &&
+      ev.key === 'Enter' &&
+      ev.shiftKey &&
+      !ev.metaKey &&
+      !ev.ctrlKey &&
+      !ev.altKey
+    ) {
       if (ev.type === 'keydown') {
         ev.preventDefault()
         window.api.sessions.write(sessionId, '\x1b\r')
@@ -272,10 +285,16 @@ async function openProcess(sessionId: string, projectId: string, entry: Entry) {
 
 /**
  * Shows the session's terminal inside `container`, creating it and starting
- * (or resuming) the claude process if needed. Resolves once output is flowing;
- * rejects if the process could not be started.
+ * (or resuming) the claude process — or shell, for a terminal card — if
+ * needed. Resolves once output is flowing; rejects if the process could not
+ * be started.
  */
-export async function attach(sessionId: string, projectId: string, container: HTMLElement) {
+export async function attach(
+  sessionId: string,
+  projectId: string,
+  container: HTMLElement,
+  kind: SessionKind = 'claude'
+) {
   ensureSubscribed()
 
   // Everything up to the first await runs synchronously, so callers can
@@ -283,7 +302,7 @@ export async function attach(sessionId: string, projectId: string, container: HT
   let entry = entries.get(sessionId)
   const isNew = !entry
   if (!entry) {
-    entry = createEntry(sessionId, container)
+    entry = createEntry(sessionId, kind, container)
   } else {
     container.appendChild(entry.host)
   }
@@ -297,7 +316,8 @@ export async function attach(sessionId: string, projectId: string, container: HT
 
   if (isNew || entry.state === 'exited') {
     if (!isNew) {
-      // A resumed Claude redraws the whole conversation; start from a clean screen.
+      // A resumed Claude redraws the whole conversation, and a restarted
+      // shell is a new one; start from a clean screen.
       entry.term.reset()
       entry.hasOutput = false
     }
@@ -342,7 +362,7 @@ export function hasOutput(sessionId: string): boolean {
   return entries.get(sessionId)?.hasOutput ?? false
 }
 
-/** Whether the next attach will start or resume a claude process. */
+/** Whether the next attach will start or resume a process. */
 export function needsOpen(sessionId: string): boolean {
   const entry = entries.get(sessionId)
   return !entry || entry.state !== 'ready'

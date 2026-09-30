@@ -58,18 +58,46 @@ export interface SessionMeta {
   transcriptPath: string
 }
 
+/**
+ * What a card runs:
+ * - claude:   a Claude Code session (the default)
+ * - terminal: a plain login shell in the project folder; never archived, no transcript
+ */
+export type SessionKind = 'claude' | 'terminal'
+
 /** Board-level state the app owns for a session card. */
 export interface BoardNode {
   sessionId: string
+  /** Absent on cards saved before terminals existed; those are Claude sessions. */
+  kind?: SessionKind
   x: number
   y: number
   archived: boolean
+  /** When the card was last archived; puts it on top of the archive stack. */
+  archivedAt?: number
   /** User-provided title; overrides the transcript title. */
   title?: string
   /** Session ids whose context was merged to create this one (drawn as edges). */
   parents?: string[]
   /** True when the session was started from Claude Nodes (vs. imported). */
   createdByApp?: boolean
+  /** Section the card is grouped under. Archived cards never belong to one. */
+  sectionId?: string
+  createdAt: number
+}
+
+/**
+ * A named frame grouping active cards on the board. The frame is drawn around
+ * its cards, so it grows and shrinks with them; x/y is its top-left corner,
+ * which is where it stays while it has no cards.
+ */
+export interface BoardSection {
+  id: string
+  /** Empty until the user names it. */
+  name: string
+  color: FolderColor
+  x: number
+  y: number
   createdAt: number
 }
 
@@ -85,6 +113,7 @@ export interface BoardSnapshot {
   project: Project
   cards: SessionCard[]
   archive: Rect
+  sections: BoardSection[]
   viewport?: Viewport
 }
 
@@ -94,11 +123,15 @@ export interface NodePatch {
   y?: number
   archived?: boolean
   title?: string
+  /** null takes the card out of its section. */
+  sectionId?: string | null
 }
 
 export interface CreateSessionOptions {
   x: number
   y: number
+  /** Defaults to 'claude'. Terminals ignore name, initialPrompt and parents. */
+  kind?: SessionKind
   /** Display name passed to `claude --name`. */
   name?: string
   /** First message sent to the new session (used by the merge feature). */

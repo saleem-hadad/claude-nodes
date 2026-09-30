@@ -1,7 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
-import { Archive, Check, GitBranch, LoaderCircle, Play, Square, X } from 'lucide-react'
+import {
+  Archive,
+  Check,
+  Folder,
+  GitBranch,
+  LoaderCircle,
+  Play,
+  RotateCcw,
+  Square,
+  SquareTerminal,
+  Trash2,
+  X
+} from 'lucide-react'
 import { Modal } from '@renderer/components/Modal'
-import { cardTitle, useApp, useCard } from '@renderer/store'
+import { cardTitle, isTerminal, tildePath, useApp, useCard } from '@renderer/store'
 import type { SessionCard } from '@shared/types'
 import * as registry from './registry'
 import './terminal.css'
@@ -16,7 +28,7 @@ export function TerminalModal() {
     <Modal
       open={open}
       onClose={closeTerminal}
-      // Escape belongs to Claude (it interrupts the current turn).
+      // Escape belongs to the terminal (in Claude it interrupts the current turn).
       closeOnEscape={false}
       className="term-modal"
       labelledBy="term-modal-title"
@@ -32,6 +44,8 @@ type Phase = 'loading' | 'ready' | 'error'
 
 function TerminalPanel({ sessionId, projectId }: { sessionId: string; projectId: string }) {
   const card = useCard(sessionId)
+  const kind = card?.kind ?? 'claude'
+  const shell = kind === 'terminal'
   const containerRef = useRef<HTMLDivElement>(null)
   const [phase, setPhase] = useState<Phase>(() =>
     registry.hasOutput(sessionId) && !registry.needsOpen(sessionId) ? 'ready' : 'loading'
@@ -51,7 +65,7 @@ function TerminalPanel({ sessionId, projectId }: { sessionId: string; projectId:
     if (registry.needsOpen(sessionId) || !registry.hasOutput(sessionId)) setPhase('loading')
     setError(null)
 
-    const attaching = registry.attach(sessionId, projectId, container)
+    const attaching = registry.attach(sessionId, projectId, container, kind)
     const offOutput = registry.onOutput(sessionId, () => {
       if (!cancelled) setPhase('ready')
     })
@@ -74,7 +88,7 @@ function TerminalPanel({ sessionId, projectId }: { sessionId: string; projectId:
       offOutput()
       registry.detach(sessionId)
     }
-  }, [sessionId, projectId, attachKey])
+  }, [sessionId, projectId, kind, attachKey])
 
   useEffect(() => {
     const container = containerRef.current
@@ -110,14 +124,16 @@ function TerminalPanel({ sessionId, projectId }: { sessionId: string; projectId:
           <div className="term-overlay" aria-live="polite">
             <div className="term-overlay-pill">
               <LoaderCircle className="term-spin" size={14} />
-              {startedLive.current ? 'Starting Claude…' : 'Resuming session…'}
+              {shell ? 'Starting shell…' : startedLive.current ? 'Starting Claude…' : 'Resuming session…'}
             </div>
           </div>
         )}
         {phase === 'error' && (
           <div className="term-overlay is-blocking">
             <div className="term-error">
-              <div className="term-error-title">Couldn’t start Claude</div>
+              <div className="term-error-title">
+                {shell ? 'Couldn’t start the shell' : 'Couldn’t start Claude'}
+              </div>
               {error && <div className="term-error-detail selectable">{error}</div>}
               <button className="btn btn-primary" onClick={resume}>
                 Try again
@@ -132,6 +148,7 @@ function TerminalPanel({ sessionId, projectId }: { sessionId: string; projectId:
 
 function statusLabel(card: SessionCard | undefined): string {
   if (!card) return ''
+  if (isTerminal(card)) return card.live ? 'Running' : 'Exited'
   if (card.status === 'working') return 'Working'
   if (card.status === 'waiting') return 'Needs you'
   return card.live ? 'Idle' : 'Not running'
@@ -150,7 +167,10 @@ function TerminalHeader({
 }) {
   const closeTerminal = useApp((s) => s.closeTerminal)
   const patchCards = useApp((s) => s.patchCards)
+  const removeCard = useApp((s) => s.removeCard)
+  const repoPath = useApp((s) => s.board?.project.repoPath)
   const [copied, setCopied] = useState(false)
+  const shell = isTerminal(card)
   const status = card?.status ?? 'done'
   const branch = card?.meta?.gitBranch
 
@@ -169,10 +189,20 @@ function TerminalHeader({
     closeTerminal()
   }
 
+  // Terminals have nothing to archive: removing one stops its shell.
+  const remove = () => {
+    closeTerminal()
+    removeCard(sessionId)
+  }
+
   return (
     <header className="term-header">
       <div className="term-status" title={statusLabel(card)}>
-        <span className="status-dot" data-status={status} />
+        {shell ? (
+          <SquareTerminal size={14} strokeWidth={2} className="term-shell-icon" data-live={card?.live} />
+        ) : (
+          <span className="status-dot" data-status={status} />
+        )}
         <span className="term-status-label" data-status={status}>
           {statusLabel(card)}
         </span>
@@ -183,55 +213,80 @@ function TerminalHeader({
           {cardTitle(card)}
         </h2>
         <div className="term-sub">
+          {shell && repoPath && (
+            <span className="term-cwd selectable" title={repoPath}>
+              <Folder size={12} />
+              <span className="term-cwd-path">{tildePath(repoPath)}</span>
+            </span>
+          )}
           {branch && (
             <span className="term-branch">
               <GitBranch size={12} />
               {branch}
             </span>
           )}
-          <button
-            className="term-id"
-            onClick={copyId}
-            title="Copy session ID"
-            aria-label="Copy session ID"
-          >
-            {copied ? (
-              <>
-                <Check size={11} /> Copied
-              </>
-            ) : (
-              sessionId.slice(0, 8)
-            )}
-          </button>
+          {!shell && (
+            <button
+              className="term-id"
+              onClick={copyId}
+              title="Copy session ID"
+              aria-label="Copy session ID"
+            >
+              {copied ? (
+                <>
+                  <Check size={11} /> Copied
+                </>
+              ) : (
+                sessionId.slice(0, 8)
+              )}
+            </button>
+          )}
         </div>
       </div>
 
       <div className="term-actions">
-        {canResume && (
-          <button className="btn" onClick={onResume}>
-            <Play size={13} />
-            Resume
-          </button>
-        )}
+        {canResume &&
+          (shell ? (
+            <button className="btn" onClick={onResume} title="Start a new shell in the project folder">
+              <RotateCcw size={13} />
+              Restart
+            </button>
+          ) : (
+            <button className="btn" onClick={onResume}>
+              <Play size={13} />
+              Resume
+            </button>
+          ))}
         {card?.live && (
           <button
             className="btn"
             onClick={() => window.api.sessions.kill(sessionId)}
-            title="Stop the Claude process (the session can be resumed later)"
+            title={
+              shell
+                ? 'Stop the shell and everything running in it'
+                : 'Stop the Claude process (the session can be resumed later)'
+            }
           >
             <Square size={12} />
             Stop
           </button>
         )}
-        <button className="btn" onClick={archive} title="Stop and move to the archive">
-          <Archive size={13} />
-          Archive
-        </button>
+        {shell ? (
+          <button className="btn" onClick={remove} title="Stop the shell and remove this terminal from the board">
+            <Trash2 size={13} />
+            Remove
+          </button>
+        ) : (
+          <button className="btn" onClick={archive} title="Stop and move to the archive">
+            <Archive size={13} />
+            Archive
+          </button>
+        )}
         <span className="term-divider" />
         <button
           className="btn btn-ghost btn-icon"
           onClick={closeTerminal}
-          title="Close (⌘W). The session keeps running."
+          title={shell ? 'Close (⌘W). The shell keeps running.' : 'Close (⌘W). The session keeps running.'}
           aria-label="Close"
         >
           <X size={16} />
