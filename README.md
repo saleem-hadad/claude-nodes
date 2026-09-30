@@ -11,9 +11,7 @@ and start new sessions from the context of old ones.
 
 </div>
 
-<a href="docs/demo.mp4">
-  <img alt="Watch the demo video" src="docs/demo-poster.jpg" width="880">
-</a>
+https://github.com/user-attachments/assets/cbbd89ac-9096-4cfe-8c6a-4f6a73e9c7f8
 
 ## Features
 
