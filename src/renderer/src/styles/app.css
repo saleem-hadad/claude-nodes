@@ -1,0 +1,11 @@
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.app-main {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}

@@ -1,0 +1,127 @@
+/*
+ * Design tokens. The app follows the macOS system appearance (light/dark).
+ * Every component styles itself with these variables — never hard-code colours.
+ */
+:root {
+  color-scheme: light dark;
+
+  /* Typography */
+  --font-ui: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif;
+  --font-mono: 'SF Mono', ui-monospace, Menlo, Monaco, monospace;
+
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-lg: 15px;
+  --text-xl: 20px;
+  --text-2xl: 26px;
+
+  /* Surfaces */
+  --bg-window: #f5f5f4;
+  --bg-toolbar: rgba(246, 246, 245, 0.82);
+  --bg-canvas: #f3f3f1;
+  --canvas-dot: rgba(0, 0, 0, 0.13);
+  --bg-elevated: #ffffff;
+  --bg-sunken: rgba(0, 0, 0, 0.035);
+  --bg-hover: rgba(0, 0, 0, 0.05);
+  --bg-pressed: rgba(0, 0, 0, 0.09);
+  --bg-selected: rgba(0, 122, 255, 0.14);
+
+  /* Text */
+  --text-primary: rgba(0, 0, 0, 0.88);
+  --text-secondary: rgba(0, 0, 0, 0.56);
+  --text-tertiary: rgba(0, 0, 0, 0.36);
+  --text-on-accent: #ffffff;
+
+  /* Lines */
+  --border: rgba(0, 0, 0, 0.1);
+  --border-strong: rgba(0, 0, 0, 0.18);
+  --separator: rgba(0, 0, 0, 0.07);
+
+  /* Accent (macOS system blue) */
+  --accent: #007aff;
+  --accent-hover: #0068d9;
+  --focus-ring: rgba(0, 122, 255, 0.5);
+
+  /* Session status */
+  --status-working: #ff9500;
+  --status-done: #007aff;
+  --status-waiting: #ff3b30;
+
+  /* Archive zone */
+  --archive-bg: rgba(120, 120, 128, 0.07);
+  --archive-border: rgba(120, 120, 128, 0.35);
+  --archive-label: rgba(0, 0, 0, 0.42);
+  --archive-drop: rgba(0, 122, 255, 0.08);
+
+  /* Folder icon (macOS style); the per-colour hues live in FolderIcon */
+  --folder-label-selected: #0063e1;
+
+  /* Terminal */
+  --term-bg: #1e1e20;
+  --term-fg: #e6e6e6;
+
+  /* Elevation */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06), 0 0 0 0.5px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.08), 0 0 0 0.5px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 18px 50px rgba(0, 0, 0, 0.18), 0 0 0 0.5px rgba(0, 0, 0, 0.12);
+  --shadow-modal: 0 30px 90px rgba(0, 0, 0, 0.35), 0 0 0 0.5px rgba(0, 0, 0, 0.2);
+
+  /* Shape & motion */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --dur-fast: 120ms;
+  --dur-med: 220ms;
+
+  /* Layout */
+  --titlebar-h: 52px;
+  --card-w: 288px;
+  --card-h: 216px; /* 4:3 */
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-window: #1e1e20;
+    --bg-toolbar: rgba(38, 38, 41, 0.82);
+    --bg-canvas: #19191b;
+    --canvas-dot: rgba(255, 255, 255, 0.11);
+    --bg-elevated: #2a2a2d;
+    --bg-sunken: rgba(255, 255, 255, 0.04);
+    --bg-hover: rgba(255, 255, 255, 0.07);
+    --bg-pressed: rgba(255, 255, 255, 0.12);
+    --bg-selected: rgba(10, 132, 255, 0.24);
+
+    --text-primary: rgba(255, 255, 255, 0.9);
+    --text-secondary: rgba(255, 255, 255, 0.58);
+    --text-tertiary: rgba(255, 255, 255, 0.36);
+
+    --border: rgba(255, 255, 255, 0.1);
+    --border-strong: rgba(255, 255, 255, 0.18);
+    --separator: rgba(255, 255, 255, 0.07);
+
+    --accent: #0a84ff;
+    --accent-hover: #3396ff;
+    --focus-ring: rgba(10, 132, 255, 0.55);
+
+    --status-working: #ff9f0a;
+    --status-done: #0a84ff;
+    --status-waiting: #ff453a;
+
+    --archive-bg: rgba(160, 160, 170, 0.06);
+    --archive-border: rgba(160, 160, 170, 0.3);
+    --archive-label: rgba(255, 255, 255, 0.42);
+    --archive-drop: rgba(10, 132, 255, 0.12);
+
+    --folder-label-selected: #0a84ff;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3), 0 0 0 0.5px rgba(255, 255, 255, 0.08);
+    --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.35), 0 0 0 0.5px rgba(255, 255, 255, 0.1);
+    --shadow-lg: 0 18px 50px rgba(0, 0, 0, 0.5), 0 0 0 0.5px rgba(255, 255, 255, 0.12);
+    --shadow-modal: 0 30px 90px rgba(0, 0, 0, 0.6), 0 0 0 0.5px rgba(255, 255, 255, 0.14);
+  }
+}
