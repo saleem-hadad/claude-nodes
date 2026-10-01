@@ -23,16 +23,15 @@ https://github.com/user-attachments/assets/cbbd89ac-9096-4cfe-8c6a-4f6a73e9c7f8
 
 ## Get started
 
-You need macOS, [Node.js](https://nodejs.org) 22+, [pnpm](https://pnpm.io) and [Claude Code](https://code.claude.com/docs/en/overview) with `claude` on your `PATH`.
+**[Download for Apple Silicon](https://github.com/saleem-hadad/claude-nodes/releases/latest/download/Claude-Nodes-arm64.dmg)** · [Intel](https://github.com/saleem-hadad/claude-nodes/releases/latest/download/Claude-Nodes-x64.dmg)
 
-```sh
-pnpm install
-pnpm dev
-```
+Open the DMG and drag Claude Nodes into Applications. You also need [Claude Code](https://code.claude.com/docs/en/overview) with `claude` on your `PATH`.
+
+The app isn't notarized yet, so macOS blocks the first launch. Open it once, then go to **System Settings → Privacy & Security** and click **Open Anyway**.
 
 Click **New Project**, pick a repo and open it. Press **N** for a new session, or drag one out of the archive to resume it.
 
-For a standalone app, run `pnpm dist` and move `dist/mac-arm64/Claude Nodes.app` into Applications.
+To build from source, see [Development](docs/how-it-works.md#development).
 
 ## Shortcuts
 

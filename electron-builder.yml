@@ -1,4 +1,4 @@
-# Packages the electron-vite build in out/ into a macOS app: `pnpm dist`.
+# Packages the electron-vite build in out/ into macOS DMGs (arm64 + x64): `pnpm dist`.
 appId: dev.saleem.claude-nodes
 productName: Claude Nodes
 directories:
@@ -13,8 +13,16 @@ npmRebuild: false
 asarUnpack:
   - node_modules/node-pty/**
 mac:
-  target: dir
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+  # No version in the name, so releases/latest/download/<name> links stay stable.
+  artifactName: Claude-Nodes-${arch}.${ext}
   category: public.app-category.developer-tools
-  # Ad-hoc signed for running locally; hardened runtime only matters for notarization.
+  # Ad-hoc signed, not notarized: users approve the first launch in Privacy & Security.
+  # Hardened runtime only matters for notarization.
   identity: '-'
   hardenedRuntime: false
+dmg:
+  # No auto-updater, so skip the .blockmap files.
+  writeUpdateInfo: false

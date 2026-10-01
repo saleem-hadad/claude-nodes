@@ -115,17 +115,31 @@ Built with Electron, electron-vite, React, TypeScript, [React Flow](https://reac
 
 ## Development
 
+You need macOS, [Node.js](https://nodejs.org) 22+ and [pnpm](https://pnpm.io).
+
 ```sh
+pnpm install
 pnpm dev          # run with hot reload
 pnpm build        # production build into out/
 pnpm start        # run the production build
 pnpm typecheck    # type-check main, preload and renderer
-pnpm dist         # build Claude Nodes.app into dist/
+pnpm dist         # build the arm64 and x64 DMGs into dist/
 ```
 
 `CLAUDE_NODES_USER_DATA=/some/dir pnpm dev` keeps app state separate from your real board, which is useful for testing.
 
-The app from `pnpm dist` is signed for your Mac only. It shares its board with `pnpm dev`, so don't run both at once.
+`pnpm dist` writes `dist/Claude-Nodes-arm64.dmg` and `dist/Claude-Nodes-x64.dmg`, with the unpacked apps in `dist/mac-arm64/` and `dist/mac/`. The apps are ad-hoc signed and not notarized, so a downloaded copy needs **Open Anyway** in Privacy & Security on first launch. The packaged app shares its board with `pnpm dev`, so don't run both at once.
+
+### Releasing
+
+Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds both DMGs and attaches them to the GitHub release for that tag. The README's download links point at `releases/latest/download/`, so they pick up each new release.
+
+```sh
+npm version 0.2.0       # bumps package.json, commits, tags v0.2.0
+git push --follow-tags
+```
+
+The workflow fails if the tag doesn't match the version in `package.json`.
 
 ### Troubleshooting installs
 
