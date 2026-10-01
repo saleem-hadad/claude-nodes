@@ -13,6 +13,50 @@ and start new sessions from the context of old ones.
 
 https://github.com/user-attachments/assets/cbbd89ac-9096-4cfe-8c6a-4f6a73e9c7f8
 
+<table>
+  <tr>
+    <td colspan="2">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/board-dark.png">
+        <img src="docs/screenshots/board.png" alt="The board: a card per session, grouped into sections, with the archive stack on the left">
+      </picture>
+      <p align="center">Every session in the repo on one board. Red cards need you.</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/terminal-dark.png">
+        <img src="docs/screenshots/terminal.png" alt="A card open in the terminal modal, with Claude asking for permission">
+      </picture>
+      <p align="center">Click a card for the real <code>claude</code> TUI.</p>
+    </td>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/expanded-dark.png">
+        <img src="docs/screenshots/expanded.png" alt="A card expanded on the board, showing its terminal">
+      </picture>
+      <p align="center">Or expand it in place and watch it work.</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/context-dark.png">
+        <img src="docs/screenshots/context.png" alt="The new session from context dialog with handoff summaries of two sessions">
+      </picture>
+      <p align="center">Start a session from the context of others.</p>
+    </td>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/archive-dark.png">
+        <img src="docs/screenshots/archive.png" alt="The archive stack open with search results for 404">
+      </picture>
+      <p align="center">Search the archive and drag a session back out.</p>
+    </td>
+  </tr>
+</table>
+
 ## Features
 
 - **A card per session** with Claude's latest reply, the branch and the last activity. Arrange cards and group them into sections.
