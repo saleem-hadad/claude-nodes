@@ -11,7 +11,7 @@ and start new sessions from the context of old ones.
 
 </div>
 
-https://github.com/user-attachments/assets/cbbd89ac-9096-4cfe-8c6a-4f6a73e9c7f8
+https://github.com/user-attachments/assets/21921a47-2635-4bc4-83f8-166f83134bde
 
 <table>
   <tr>
