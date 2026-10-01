@@ -7,6 +7,8 @@ export interface BoardActions {
   setRenaming(id: string | null): void
   /** Commits a new name for a section (empty leaves it untitled). */
   renameSection(sectionId: string, name: string): void
+  /** Expands active cards in place, showing their terminals, or folds them back into cards. */
+  expand(sessionIds: string[], expanded: boolean): void
 }
 
 export const BoardActionsContext = createContext<BoardActions | null>(null)
@@ -25,6 +27,12 @@ export const ArchiveHotContext = createContext(false)
 
 /** The section a dragged card would join if dropped now, if any. */
 export const SectionHotContext = createContext<string | null>(null)
+
+/**
+ * Sections Claude is naming: null while it thinks, then briefly the name it
+ * gave ('' if it gave none) while that lands.
+ */
+export const SectionNamingContext = createContext<ReadonlyMap<string, string | null>>(new Map())
 
 /** UI state of the archive stack. */
 export interface ArchiveStack {

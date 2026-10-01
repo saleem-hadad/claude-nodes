@@ -33,11 +33,15 @@ import {
 import { getClaudePath, getClaudeVersion, initEnv } from './env'
 import { configureStatus, forgetStatus, startHookServer, stopHookServer } from './hooks'
 import { installMenu } from './menu'
+import { nameSection, type NamingSource } from './naming'
 import * as ptys from './pty'
 import { flush, getBoard, getProject, getState, loadState, save } from './store'
 import { summarizeSessions } from './summarize'
 
 const FOLDER_COLORS: FolderColor[] = ['blue', 'purple', 'pink', 'red', 'orange', 'yellow', 'green', 'graphite']
+
+/** Bounds for an expanded card's size, in board units. */
+const clampSize = (n: number) => Math.round(Math.min(4000, Math.max(200, n)))
 
 export async function registerIpc(getWindow: () => BrowserWindow | null) {
   loadState()
@@ -172,8 +176,17 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
       else if (typeof patch.sectionId === 'string' && board.sections![patch.sectionId]) {
         node.sectionId = patch.sectionId
       }
-      // An archived card leaves its section.
-      if (node.archived) delete node.sectionId
+      if (typeof patch.expanded === 'boolean') {
+        if (patch.expanded) node.expanded = true
+        else delete node.expanded
+      }
+      if (typeof patch.w === 'number' && Number.isFinite(patch.w)) node.w = clampSize(patch.w)
+      if (typeof patch.h === 'number' && Number.isFinite(patch.h)) node.h = clampSize(patch.h)
+      // An archived card leaves its section, and folds back to a card.
+      if (node.archived) {
+        delete node.sectionId
+        delete node.expanded
+      }
     }
     save()
   })
@@ -199,6 +212,24 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
       if (node.sectionId === sectionId) delete node.sectionId
     }
     save()
+  })
+
+  ipcMain.handle(IPC.boardNameSection, async (_e, projectId: string, sessionIds: string[]) => {
+    await envReady
+    const project = getProject(projectId)
+    const board = getBoard(projectId)
+    const sources: NamingSource[] = []
+    for (const sessionId of sessionIds) {
+      const node = board.nodes[sessionId]
+      // A shell says nothing about what the group is for.
+      if (!node || node.kind === 'terminal') continue
+      const found = readSession(sessionId, transcriptPath(project.repoPath, sessionId))
+      const meta = found?.hasContent ? found.meta : undefined
+      const title = node.title || meta?.title
+      if (title) sources.push({ title, firstPrompt: meta?.firstPrompt })
+    }
+    if (sources.length === 0) throw new Error('These sessions have nothing to name the section after yet')
+    return nameSection(sources)
   })
 
   ipcMain.handle(IPC.boardSaveArchive, (_e, projectId: string, rect: Rect) => {

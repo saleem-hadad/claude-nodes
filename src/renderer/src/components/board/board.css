@@ -251,6 +251,158 @@ kbd {
   margin-left: auto;
 }
 
+/* Expands the card in place; shows on hover over the corner the live glyph sits in. */
+.card-expand {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  opacity: 0;
+  transition:
+    opacity var(--dur-fast) ease,
+    background var(--dur-fast) ease;
+}
+.session-card:hover .card-expand {
+  opacity: 1;
+}
+.card-expand:hover {
+  background: color-mix(in srgb, var(--text-primary) 7%, var(--bg-elevated));
+  color: var(--text-primary);
+}
+
+/* ---------------------------------------------------------- expanded card */
+
+/* A card expanded in place: a title bar (its drag handle) over the live
+   terminal. It fills its node, which the resize handles size. */
+.session-card.is-expanded {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+  isolation: isolate;
+}
+.session-card.is-expanded.is-dragging {
+  transform: none;
+}
+
+.card-xhead {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: none;
+  height: 40px;
+  padding: 0 6px 0 14px;
+}
+.card-xhead .card-title {
+  display: block;
+  font-size: var(--text-md);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.card-xhead .card-live,
+.card-xhead .card-shell {
+  margin-top: 0;
+}
+
+.card-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  margin-left: auto;
+}
+.card-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  transition: background var(--dur-fast) ease;
+}
+.card-tool.is-labelled {
+  padding: 0 9px;
+  color: var(--text-primary);
+}
+.card-tool:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.card-tool:active {
+  background: var(--bg-pressed);
+}
+
+.card-term {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  padding: 8px 4px 8px 12px;
+  background: var(--term-bg);
+  cursor: text;
+}
+
+/* Grip in the bottom-right corner, shown while the pointer is over the card. */
+.session-card.is-expanded::after {
+  content: '';
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  z-index: 1;
+  width: 11px;
+  height: 11px;
+  background: linear-gradient(
+    135deg,
+    transparent 0 46%,
+    rgba(255, 255, 255, 0.32) 46% 54%,
+    transparent 54% 72%,
+    rgba(255, 255, 255, 0.32) 72% 80%,
+    transparent 80%
+  );
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-fast) ease;
+}
+.react-flow__node-session:hover .session-card.is-expanded::after {
+  opacity: 1;
+}
+
+/* The resize handles are invisible grab zones along the edges and corners. */
+.board-canvas .react-flow__resize-control.card-resize-line {
+  z-index: 2;
+  border-color: transparent;
+}
+.board-canvas .react-flow__resize-control.card-resize-line.left,
+.board-canvas .react-flow__resize-control.card-resize-line.right {
+  width: 10px;
+}
+.board-canvas .react-flow__resize-control.card-resize-line.top,
+.board-canvas .react-flow__resize-control.card-resize-line.bottom {
+  height: 10px;
+}
+.board-canvas .react-flow__resize-control.card-resize-handle {
+  z-index: 3;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  background: transparent;
+}
+
 /* ----------------------------------------------------------- archive zone */
 
 /* The archive is a compact frame around its stack that opens into a floating
@@ -644,6 +796,130 @@ kbd {
   color: color-mix(in srgb, var(--section-hue) 55%, var(--text-tertiary));
   font-size: var(--text-sm);
   pointer-events: none;
+}
+
+/* While Claude names a new section, a soft light circles its frame, then
+   fades as the name lands. A sharp ring traces the border, and a blurred copy
+   of it glows around. */
+@property --glow-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: true;
+}
+.section-glow {
+  position: absolute;
+  inset: -1.5px;
+  border-radius: inherit;
+  pointer-events: none;
+  animation:
+    glow-in 600ms var(--ease-out) backwards,
+    glow-turn 3.2s linear infinite;
+  transition: opacity 700ms ease;
+}
+.section-glow.is-fading {
+  opacity: 0;
+}
+.section-glow-halo {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  filter: blur(9px);
+  opacity: 0.55;
+}
+.section-glow-ring {
+  position: absolute;
+  inset: 0;
+  padding: 1.5px;
+  border-radius: inherit;
+  background: conic-gradient(
+    from var(--glow-angle),
+    #0a84ff,
+    #5e5ce6,
+    #bf5af2,
+    #ff375f,
+    #ff9f0a,
+    #bf5af2,
+    #0a84ff
+  );
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+}
+.section-glow-halo .section-glow-ring {
+  padding: 3px;
+}
+@keyframes glow-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes glow-turn {
+  to {
+    --glow-angle: 360deg;
+  }
+}
+
+/* "Naming…" with a light sweeping through it. */
+.section-name.is-naming {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+}
+.section-sparkle {
+  flex: none;
+  color: #bf5af2;
+  animation: sparkle-twinkle 1.6s ease-in-out infinite;
+}
+.section-naming-text {
+  background: linear-gradient(
+      90deg,
+      color-mix(in srgb, currentColor 45%, transparent) 0%,
+      currentColor 40%,
+      color-mix(in srgb, #bf5af2 80%, currentColor) 50%,
+      currentColor 60%,
+      color-mix(in srgb, currentColor 45%, transparent) 100%
+    )
+    0 0 / 250% 100%;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: naming-sweep 1.8s ease-in-out infinite;
+}
+@keyframes sparkle-twinkle {
+  50% {
+    opacity: 0.55;
+    transform: scale(0.82) rotate(12deg);
+  }
+}
+@keyframes naming-sweep {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0% 0;
+  }
+}
+
+/* The name Claude gave, each letter easing in out of a blur. */
+.section-name.is-revealing > span {
+  display: inline-block;
+  white-space: pre;
+  animation: letter-in 460ms var(--ease-out) backwards;
+}
+@keyframes letter-in {
+  from {
+    opacity: 0;
+    filter: blur(5px);
+    transform: translateY(3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .section-glow,
+  .section-sparkle,
+  .section-naming-text {
+    animation: none;
+  }
 }
 
 /* ------------------------------------------------------------------ edges */

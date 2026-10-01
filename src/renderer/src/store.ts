@@ -110,8 +110,11 @@ export const useApp = create<AppState>((set, get) => ({
           // Archived sessions always read as done.
           if (p.archived) next.status = 'done'
           if (p.archived && !c.archived) next.archivedAt = Date.now()
-          // …and leave their section.
-          if (next.archived) next.sectionId = undefined
+          // …leave their section, and fold back to a card.
+          if (next.archived) {
+            next.sectionId = undefined
+            next.expanded = undefined
+          }
           return next
         })
       }

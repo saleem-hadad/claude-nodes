@@ -1,6 +1,7 @@
 // Keeps one xterm instance per session alive for the lifetime of the renderer.
-// Closing the terminal modal only moves the terminal's host element into a
-// hidden holder, so reopening a card shows the exact screen it left.
+// Closing the terminal modal (or collapsing an expanded card) only moves the
+// terminal's host element into a hidden holder, so reopening a card shows the
+// exact screen it left.
 //
 // Ordering: sessions.open() returns the output buffered by the main process
 // up to the moment it replied. Electron delivers main -> renderer messages in
@@ -155,6 +156,7 @@ function createEntry(sessionId: string, kind: SessionKind, container: HTMLElemen
   term.loadAddon(new WebLinksAddon((_event, uri) => window.open(uri, '_blank')))
 
   term.open(host)
+  unscalePointer(term)
 
   try {
     const webgl = new WebglAddon()
@@ -246,6 +248,36 @@ function createEntry(sessionId: string, kind: SessionKind, container: HTMLElemen
   return entry
 }
 
+/**
+ * xterm maps the pointer to cells in unscaled pixels, but a card expanded on
+ * the board is drawn scaled by the board's zoom. Map pointer positions back
+ * into the terminal's own pixels so clicks and selections land on the right
+ * cell at any zoom. (Reaches into xterm's mouse service, which every pointer
+ * feature shares; if that ever moves, this does nothing.)
+ */
+function unscalePointer(term: Terminal) {
+  type Coords = { clientX: number; clientY: number }
+  const mouse = (term as unknown as { _core?: { _mouseService?: Record<string, unknown> } })._core
+    ?._mouseService
+  if (!mouse) return
+  const unscale = (event: Coords, element: HTMLElement): Coords => {
+    const rect = element.getBoundingClientRect()
+    const sx = element.offsetWidth ? rect.width / element.offsetWidth : 1
+    const sy = element.offsetHeight ? rect.height / element.offsetHeight : 1
+    if (Math.abs(sx - 1) < 0.001 && Math.abs(sy - 1) < 0.001) return event
+    return {
+      clientX: rect.left + (event.clientX - rect.left) / sx,
+      clientY: rect.top + (event.clientY - rect.top) / sy
+    }
+  }
+  for (const name of ['getCoords', 'getMouseReportCoords']) {
+    const original = mouse[name]
+    if (typeof original !== 'function') continue
+    mouse[name] = (event: Coords, element: HTMLElement, ...rest: unknown[]) =>
+      original.call(mouse, unscale(event, element), element, ...rest)
+  }
+}
+
 function fitEntry(entry: Entry) {
   if (!entry.host.isConnected || entry.host.parentElement === holder) return
   try {
@@ -329,10 +361,15 @@ export async function attach(
   window.api.sessions.resize(sessionId, entry.term.cols, entry.term.rows)
 }
 
-/** Parks the terminal offscreen, keeping its state for the next attach. */
-export function detach(sessionId: string) {
+/**
+ * Parks the terminal offscreen, keeping its state for the next attach. With
+ * `container`, only if it is still shown there: the terminal may have moved on
+ * to another view (the modal, or its card on the board) meanwhile.
+ */
+export function detach(sessionId: string, container?: HTMLElement) {
   const entry = entries.get(sessionId)
   if (!entry) return
+  if (container && entry.host.parentElement !== container) return
   entry.term.blur()
   getHolder().appendChild(entry.host)
 }

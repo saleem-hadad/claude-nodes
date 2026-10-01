@@ -16,6 +16,7 @@ import { Modal } from '@renderer/components/Modal'
 import { cardTitle, isTerminal, tildePath, useApp, useCard } from '@renderer/store'
 import type { SessionCard } from '@shared/types'
 import * as registry from './registry'
+import { useAttachedTerminal } from './useAttachedTerminal'
 import './terminal.css'
 
 export function TerminalModal() {
@@ -40,74 +41,18 @@ export function TerminalModal() {
   )
 }
 
-type Phase = 'loading' | 'ready' | 'error'
-
 function TerminalPanel({ sessionId, projectId }: { sessionId: string; projectId: string }) {
   const card = useCard(sessionId)
   const kind = card?.kind ?? 'claude'
   const shell = kind === 'terminal'
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [phase, setPhase] = useState<Phase>(() =>
-    registry.hasOutput(sessionId) && !registry.needsOpen(sessionId) ? 'ready' : 'loading'
-  )
-  const [error, setError] = useState<string | null>(null)
-  // Bumped by "Resume" to re-run the attach effect.
-  const [attachKey, setAttachKey] = useState(0)
+  const { containerRef, phase, error, reattach } = useAttachedTerminal(sessionId, projectId, kind)
   // Label the loading state by how the modal was opened, so it doesn't flip
   // mid-load when the status event marks the session live.
   const startedLive = useRef(card?.live ?? false)
 
-  useEffect(() => {
-    const container = containerRef.current
-    if (!container) return
-    let cancelled = false
-
-    if (registry.needsOpen(sessionId) || !registry.hasOutput(sessionId)) setPhase('loading')
-    setError(null)
-
-    const attaching = registry.attach(sessionId, projectId, container, kind)
-    const offOutput = registry.onOutput(sessionId, () => {
-      if (!cancelled) setPhase('ready')
-    })
-    attaching.then(
-      () => {
-        if (cancelled) return
-        if (registry.hasOutput(sessionId)) setPhase('ready')
-        registry.focus(sessionId)
-      },
-      (err: unknown) => {
-        if (cancelled) return
-        setError(err instanceof Error ? err.message : String(err))
-        setPhase('error')
-      }
-    )
-    registry.focus(sessionId)
-
-    return () => {
-      cancelled = true
-      offOutput()
-      registry.detach(sessionId)
-    }
-  }, [sessionId, projectId, kind, attachKey])
-
-  useEffect(() => {
-    const container = containerRef.current
-    if (!container) return
-    let frame = 0
-    const observer = new ResizeObserver(() => {
-      cancelAnimationFrame(frame)
-      frame = requestAnimationFrame(() => registry.refit(sessionId))
-    })
-    observer.observe(container)
-    return () => {
-      observer.disconnect()
-      cancelAnimationFrame(frame)
-    }
-  }, [sessionId])
-
   const resume = () => {
     startedLive.current = false
-    setAttachKey((k) => k + 1)
+    reattach()
   }
 
   return (

@@ -37,6 +37,7 @@ export const IPC = {
   boardRemoveNode: 'board:remove-node',
   boardSaveSection: 'board:save-section',
   boardRemoveSection: 'board:remove-section',
+  boardNameSection: 'board:name-section',
 
   sessionCreate: 'session:create',
   sessionOpen: 'session:open',
@@ -101,6 +102,8 @@ export interface Api {
     saveSection(projectId: string, section: BoardSection): Promise<void>
     /** Deletes a section; its cards stay where they are, ungrouped. */
     removeSection(projectId: string, sectionId: string): Promise<void>
+    /** Asks Claude for a short name for a section holding these sessions. */
+    nameSection(projectId: string, sessionIds: string[]): Promise<string>
   }
 
   sessions: {

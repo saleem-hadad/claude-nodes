@@ -1,7 +1,19 @@
 // Geometry for sections: named frames drawn around the cards grouped under them.
 import type { Node } from '@xyflow/react'
 import type { BoardSection, Rect, SessionCard } from '@shared/types'
-import { CARD_H, CARD_W, GAP, cardRect, containsPoint, findFreeSpot, intersects, type Point } from './layout'
+import {
+  CARD_H,
+  CARD_SIZE,
+  CARD_W,
+  GAP,
+  cardRect,
+  cardSize,
+  containsPoint,
+  findFreeSpot,
+  intersects,
+  type Point,
+  type Size
+} from './layout'
 import type { SectionFlowNode } from './SectionNode'
 
 /** Height of a section's header strip, its drag handle. */
@@ -17,8 +29,8 @@ export interface SectionView {
   members: SessionCard[]
 }
 
-/** The frame around the given card positions; with none, an empty one-card frame at `corner`. */
-export function frameAround(corner: Point, cards: Point[]): Rect {
+/** The frame around the given cards; with none, an empty one-card frame at `corner`. */
+export function frameAround(corner: Point, cards: Rect[]): Rect {
   if (cards.length === 0) {
     return {
       x: corner.x,
@@ -29,8 +41,8 @@ export function frameAround(corner: Point, cards: Point[]): Rect {
   }
   const left = Math.min(...cards.map((c) => c.x))
   const top = Math.min(...cards.map((c) => c.y))
-  const right = Math.max(...cards.map((c) => c.x)) + CARD_W
-  const bottom = Math.max(...cards.map((c) => c.y)) + CARD_H
+  const right = Math.max(...cards.map((c) => c.x + c.w))
+  const bottom = Math.max(...cards.map((c) => c.y + c.h))
   return {
     x: left - SECTION_PAD,
     y: top - SECTION_HEADER_H,
@@ -47,7 +59,7 @@ export function sectionViews(sections: BoardSection[], cards: SessionCard[]): Se
   }
   return sections.map((section) => {
     const own = members.get(section.id)!
-    return { section, members: own, frame: frameAround(section, own) }
+    return { section, members: own, frame: frameAround(section, own.map((c) => cardRect(c, cardSize(c)))) }
   })
 }
 
@@ -56,8 +68,13 @@ export function sectionViews(sections: BoardSection[], cards: SessionCard[]): Se
  * card's center. Where frames overlap, the card's current section wins, then
  * the newest.
  */
-export function sectionAt(position: Point, views: SectionView[], current?: string): string | null {
-  const center = { x: position.x + CARD_W / 2, y: position.y + CARD_H / 2 }
+export function sectionAt(
+  position: Point,
+  views: SectionView[],
+  current?: string,
+  size: Size = CARD_SIZE
+): string | null {
+  const center = { x: position.x + size.w / 2, y: position.y + size.h / 2 }
   const hits = views.filter((v) => containsPoint(v.frame, center))
   const hit = hits.find((v) => v.section.id === current) ?? hits[hits.length - 1]
   return hit?.section.id ?? null
@@ -125,27 +142,30 @@ export function layoutGroup(
   others: Rect[],
   zones: Rect[]
 ): { frame: Rect; positions: Map<string, Point> } {
-  const around = frameAround(cards[0], cards)
+  const around = frameAround(cards[0], cards.map((c) => cardRect(c, cardSize(c))))
   const clear =
     !others.some((o) => intersects(o, around)) && !zones.some((z) => intersects(z, around, GAP))
   if (clear) return { frame: around, positions: new Map() }
 
   const cols = Math.min(GROUP_MAX_COLS, Math.ceil(Math.sqrt(cards.length)))
   const rows = Math.ceil(cards.length / cols)
+  // Grid cells fit the largest card, so expanded ones don't overlap their neighbours.
+  const cellW = Math.max(...cards.map((c) => cardSize(c).w))
+  const cellH = Math.max(...cards.map((c) => cardSize(c).h))
   const size = {
-    w: SECTION_PAD * 2 + cols * CARD_W + (cols - 1) * GAP,
-    h: SECTION_HEADER_H + rows * CARD_H + (rows - 1) * GAP + SECTION_PAD
+    w: SECTION_PAD * 2 + cols * cellW + (cols - 1) * GAP,
+    h: SECTION_HEADER_H + rows * cellH + (rows - 1) * GAP + SECTION_PAD
   }
   const corner = findFreeSpot({ x: around.x, y: around.y }, [...others, ...zones], undefined, size)
   // Keep the cards' reading order: rows top to bottom, then left to right.
-  const row = (c: Point) => Math.round(c.y / (CARD_H + GAP))
+  const row = (c: Point) => Math.round(c.y / (cellH + GAP))
   const sorted = [...cards].sort((a, b) => row(a) - row(b) || a.x - b.x)
   const positions = new Map(
     sorted.map((c, i) => [
       c.sessionId,
       {
-        x: Math.round(corner.x + SECTION_PAD + (i % cols) * (CARD_W + GAP)),
-        y: Math.round(corner.y + SECTION_HEADER_H + Math.floor(i / cols) * (CARD_H + GAP))
+        x: Math.round(corner.x + SECTION_PAD + (i % cols) * (cellW + GAP)),
+        y: Math.round(corner.y + SECTION_HEADER_H + Math.floor(i / cols) * (cellH + GAP))
       }
     ])
   )

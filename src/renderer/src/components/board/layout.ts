@@ -6,6 +6,12 @@ export const CARD_W = 288
 export const CARD_H = 216
 export const GAP = 32
 
+/** An expanded card starts with room for an 80-column terminal, and can't shrink past a usable one. */
+export const EXPANDED_W = 720
+export const EXPANDED_H = 480
+export const EXPANDED_MIN_W = 360
+export const EXPANDED_MIN_H = 240
+
 /**
  * The archive is a single stack of cards anchored at the archive's corner (its
  * stored x/y). Its search fans matching cards out into a panel beside it.
@@ -34,8 +40,26 @@ export interface Point {
   y: number
 }
 
-export function cardRect(p: Point): Rect {
-  return { x: p.x, y: p.y, w: CARD_W, h: CARD_H }
+export interface Size {
+  w: number
+  h: number
+}
+
+export const CARD_SIZE: Size = { w: CARD_W, h: CARD_H }
+
+/** Whether a card is drawn expanded, with its terminal on the board. Archived cards never are. */
+export function isExpanded(card: Pick<SessionCard, 'expanded' | 'archived'> | undefined): boolean {
+  return Boolean(card?.expanded && !card.archived)
+}
+
+/** A card's size on the board: compact, or as big as it was last expanded to. */
+export function cardSize(card: Pick<SessionCard, 'expanded' | 'archived' | 'w' | 'h'> | undefined): Size {
+  if (!isExpanded(card)) return CARD_SIZE
+  return { w: card!.w ?? EXPANDED_W, h: card!.h ?? EXPANDED_H }
+}
+
+export function cardRect(p: Point, size: Size = CARD_SIZE): Rect {
+  return { x: p.x, y: p.y, w: size.w, h: size.h }
 }
 
 export function intersects(a: Rect, b: Rect, margin = 0): boolean {
@@ -52,8 +76,8 @@ export function containsPoint(r: Rect, p: Point): boolean {
 }
 
 /** A card counts as archived when its center lies inside the archive zone. */
-export function isInArchive(position: Point, archive: Rect): boolean {
-  return containsPoint(archive, { x: position.x + CARD_W / 2, y: position.y + CARD_H / 2 })
+export function isInArchive(position: Point, archive: Rect, size: Size = CARD_SIZE): boolean {
+  return containsPoint(archive, { x: position.x + size.w / 2, y: position.y + size.h / 2 })
 }
 
 /**
@@ -102,7 +126,7 @@ export function findFreeSpot(
 
 /** Obstacle rectangles for all cards except the excluded ids. */
 export function cardObstacles(cards: SessionCard[], exclude: Set<string> = new Set()): Rect[] {
-  return cards.filter((c) => !exclude.has(c.sessionId)).map((c) => cardRect(c))
+  return cards.filter((c) => !exclude.has(c.sessionId)).map((c) => cardRect(c, cardSize(c)))
 }
 
 /**
@@ -165,7 +189,7 @@ export function spotForNewSession(archive: Rect, cards: SessionCard[]): Point {
   if (active.length === 0) return spotRightOfArchive(archive, cards)
   const rightmost = active.reduce((a, b) => (b.x > a.x ? b : a))
   return findFreeSpot(
-    { x: rightmost.x + CARD_W + GAP * 2, y: rightmost.y },
+    { x: rightmost.x + cardSize(rightmost).w + GAP * 2, y: rightmost.y },
     cardObstacles(cards),
     archive
   )

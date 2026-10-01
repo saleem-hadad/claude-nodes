@@ -17,7 +17,7 @@ https://github.com/user-attachments/assets/cbbd89ac-9096-4cfe-8c6a-4f6a73e9c7f8
 
 - **A card per session** with Claude's latest reply, the branch and the last activity. Arrange cards and group them into sections.
 - **Live status** from Claude Code hooks: 🟠 working · 🔴 needs you · 🔵 done.
-- **The real terminal.** Click a card to open the actual `claude` TUI, or press **T** for a shell in the project folder.
+- **The real terminal.** Click a card to open the actual `claude` TUI, or expand it right on the board and resize it. Press **T** for a shell in the project folder.
 - **New session from context.** Select a few cards and start a session that already knows what they did.
 - **A searchable archive.** Old sessions stack up in one pile. Drag a card out to pick it up again.
 
@@ -40,6 +40,7 @@ For a standalone app, run `pnpm dist` and move `dist/mac-arm64/Claude Nodes.app`
 | --- | --- |
 | New session · new terminal | N · T |
 | Open a card | Click · Enter |
+| Expand a card on the board · collapse it | E |
 | Select cards | Drag on empty canvas · ⇧-click |
 | Group the selection into a section | ⌘G |
 | Archive the selection | ⌫ |

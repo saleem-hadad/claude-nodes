@@ -28,6 +28,10 @@ Sessions are ordinary Claude Code sessions. New cards run `claude --session-id <
 
 Terminal cards run `$SHELL -l` in the repo folder with your login-shell environment. They get no hooks and have no transcript, so they have no status dot. A terminal whose shell has exited starts a fresh shell when you reopen it.
 
+## Expanded cards
+
+A card can expand in place to show its terminal on the board, so you can watch several sessions at once. It's the same terminal as the modal's, so moving between the two keeps the screen. Drag a card's edges or corners to resize it. The board saves each card's size and whether it's expanded. After a restart, an expanded card waits for you to click **Resume session** or **Start shell** before it starts anything.
+
 ## Status
 
 Status comes from hooks that the app adds for its own processes with `--settings`. Each hook POSTs its payload to a token-protected server on 127.0.0.1:
@@ -66,6 +70,8 @@ Transcripts stay where Claude Code keeps them. The app stores only the board lay
 | Board | New session | N · ⌘N · double-click empty canvas |
 | | New terminal in the project folder | T · ⌘T |
 | | Open a card | Click · Enter |
+| | Expand a card on the board, or collapse it | E · the card's ⤢ button |
+| | Resize an expanded card | Drag its edges or corners |
 | | Select | Drag on empty canvas · ⇧-click · ⌘-click · ⌘A (all active) |
 | | Group the selection into a section | ⌘G |
 | | Archive the selection | ⌫ |

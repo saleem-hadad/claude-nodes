@@ -26,11 +26,14 @@ import {
 } from '@xyflow/react'
 import {
   Archive,
+  AppWindowMac,
   ArchiveRestore,
   Eye,
   Group,
   Loader2,
   Maximize,
+  Maximize2,
+  Minimize2,
   PencilLine,
   Plus,
   Sparkles,
@@ -61,6 +64,7 @@ import {
   BoardActionsContext,
   RenamingContext,
   SectionHotContext,
+  SectionNamingContext,
   type ArchiveStack,
   type BoardActions
 } from '@renderer/components/board/BoardContext'
@@ -101,6 +105,8 @@ import {
   CARD_H,
   CARD_W,
   GAP,
+  cardSize,
+  isExpanded,
   STACK_DEPTH,
   STACK_ROWS,
   cardObstacles,
@@ -117,8 +123,11 @@ import {
   stackScrollMax,
   stackTop,
   stackZone,
-  type Point
+  type Point,
+  type Size
 } from '@renderer/components/board/layout'
+import { wakeCardTerminal } from '@renderer/components/board/ExpandedCard'
+import { focus as focusTerminal } from '@renderer/terminal/registry'
 import { fuzzyMatch } from '@renderer/components/board/fuzzy'
 import '@renderer/components/board/board.css'
 
@@ -134,6 +143,8 @@ const HOME_ARCHIVE_ROWS_H = 64 + 3 * 240
 
 /** How long a card keeps flying after the stack deals it out or takes it back. */
 const FLIGHT_MS = 700
+/** How long a name from Claude takes to fade into a section's header. */
+const NAME_LANDING_MS = 1200
 /** Z-order of the open archive panel, above every card on the board. */
 const RAISED_Z = 1500
 /** How far a result cut off at the panel's edge still shows its shadow past the cut. */
@@ -250,7 +261,9 @@ function buildNodes(
     const folded = card.archived
     const result = folded ? stack.results.get(id) : undefined
     const depth = depthOf.get(id) ?? 0
-    const held = Boolean(p && (p.dragging || busy.has(id)))
+    const held = Boolean(p && (p.dragging || p.resizing || busy.has(id)))
+    // A card being resized keeps the size under the pointer.
+    const size = p?.resizing ? { w: p.width!, h: p.height! } : cardSize(card)
 
     let position = { x: card.x, y: card.y }
     if (result) position = stackResultSpot(board.archive, result.slot, stack.scroll)
@@ -308,7 +321,14 @@ function buildNodes(
             clipPath
           } as CSSProperties)
         : undefined
-    const zIndex = !folded ? undefined : result ? base + 10 : base + Math.max(0, STACK_DEPTH - depth)
+    // Expanded cards sit above the cards around them.
+    const zIndex = !folded
+      ? isExpanded(card)
+        ? 1
+        : undefined
+      : result
+        ? base + 10
+        : base + Math.max(0, STACK_DEPTH - depth)
     // Only the top card and the fanned-out results can be grabbed.
     const draggable = folded ? Boolean(result) || depth === 0 : undefined
     const selectable = folded ? Boolean(result) : undefined
@@ -318,8 +338,8 @@ function buildNodes(
         id,
         type: 'session',
         position,
-        width: CARD_W,
-        height: CARD_H,
+        width: size.w,
+        height: size.h,
         deletable: false,
         hidden,
         className,
@@ -336,6 +356,8 @@ function buildNodes(
       dataSame &&
       position.x === p.position.x &&
       position.y === p.position.y &&
+      size.w === p.width &&
+      size.h === p.height &&
       hidden === Boolean(p.hidden) &&
       className === p.className &&
       JSON.stringify(style) === JSON.stringify(p.style) &&
@@ -349,6 +371,8 @@ function buildNodes(
     return {
       ...p,
       position,
+      width: size.w,
+      height: size.h,
       hidden,
       className,
       style,
@@ -404,8 +428,11 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
   const wrapperRef = useRef<HTMLDivElement>(null)
 
   const [renaming, setRenaming] = useState<string | null>(null)
+  const renamingRef = useRef(renaming)
+  renamingRef.current = renaming
   const [archiveHot, setArchiveHot] = useState(false)
   const [hotSection, setHotSection] = useState<string | null>(null)
+  const [naming, setNaming] = useState<ReadonlyMap<string, string | null>>(new Map())
   const [movingSection, setMovingSection] = useState(false)
   const [menu, setMenu] = useState<MenuState | null>(null)
   const [confirmReq, setConfirmReq] = useState<ConfirmRequest | null>(null)
@@ -689,9 +716,9 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
     )
   }, [])
 
-  /** Pans so a newly placed card is on screen (keeps the current zoom). */
+  /** Pans so a newly placed (or expanded) card is on screen (keeps the current zoom). */
   const ensureVisible = useCallback(
-    (p: Point) => {
+    (p: Point, size: Size = { w: CARD_W, h: CARD_H }) => {
       const el = wrapperRef.current
       if (!el) return
       const { x, y, zoom } = rf.getViewport()
@@ -699,8 +726,13 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
       const top = -y / zoom
       const view = { x: left, y: top, w: el.clientWidth / zoom, h: el.clientHeight / zoom }
       const inside =
-        p.x >= view.x && p.y >= view.y && p.x + CARD_W <= view.x + view.w && p.y + CARD_H <= view.y + view.h
-      if (!inside) rf.setCenter(p.x + CARD_W / 2, p.y + CARD_H / 2, { zoom, duration: 320 })
+        p.x >= view.x && p.y >= view.y && p.x + size.w <= view.x + view.w && p.y + size.h <= view.y + view.h
+      if (inside) return
+      // Centre it; one bigger than the view lines up its top-left corner instead.
+      const margin = 24 / zoom
+      const mid = (start: number, len: number, viewLen: number) =>
+        len <= viewLen ? start + len / 2 : start + viewLen / 2 - margin
+      rf.setCenter(mid(p.x, size.w, view.w), mid(p.y, size.h, view.h), { zoom, duration: 320 })
     },
     [rf]
   )
@@ -710,9 +742,28 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
       const card = cardsRef.current.find((c) => c.sessionId === sessionId)
       if (!card) return
       if (card.archived) openPreview(sessionId)
+      // An expanded card shows its session right there.
+      else if (isExpanded(card)) wakeCardTerminal(sessionId)
       else openTerminal(sessionId)
     },
     [openPreview, openTerminal]
+  )
+
+  const expandCards = useCallback(
+    (ids: string[], expanded: boolean) => {
+      const targets = cardsRef.current.filter(
+        (c) => ids.includes(c.sessionId) && !c.archived && isExpanded(c) !== expanded
+      )
+      if (targets.length === 0) return
+      // Expanding shows the session there, as opening it would in the modal.
+      if (expanded) for (const c of targets) wakeCardTerminal(c.sessionId)
+      patchCards(targets.map((c) => ({ sessionId: c.sessionId, expanded })))
+      if (expanded && targets.length === 1) {
+        const card = targets[0]
+        ensureVisible(card, cardSize({ ...card, expanded }))
+      }
+    },
+    [patchCards, ensureVisible]
   )
 
   const createSession = useCallback(
@@ -771,9 +822,9 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
 
   // ---- sections --------------------------------------------------------------
 
-  /** Saves a new, untitled section at `corner` and starts naming it. */
+  /** Saves a new, untitled section at `corner`, and starts renaming it unless Claude will name it. */
   const addSection = useCallback(
-    (corner: Point): BoardSection => {
+    (corner: Point, rename = true): BoardSection => {
       const used = new Set(groupsRef.current.map((g) => g.section.color))
       const section: BoardSection = {
         id: crypto.randomUUID(),
@@ -784,10 +835,41 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
         createdAt: Date.now()
       }
       saveSection(section)
-      setRenaming(section.id)
+      if (rename) setRenaming(section.id)
       return section
     },
     [saveSection]
+  )
+
+  /** Asks Claude to name a new section after its sessions; its header shimmers meanwhile. */
+  const nameSection = useCallback(
+    (sectionId: string, sessionIds: string[]) => {
+      setNaming((m) => new Map(m).set(sectionId, null))
+      const settle = (name?: string) => {
+        // Read the store, not this board's refs: the user may have left the board.
+        const board = useApp.getState().board
+        const section = board?.project.id === projectId ? board.sections.find((s) => s.id === sectionId) : undefined
+        // Never overwrite a name the user gave it, or one they are typing.
+        let landed = ''
+        if (name && section && !section.name && renamingRef.current !== sectionId) {
+          landed = name
+          saveSection({ ...section, name })
+        }
+        setNaming((m) => new Map(m).set(sectionId, landed))
+        window.setTimeout(() => {
+          setNaming((m) => {
+            const next = new Map(m)
+            next.delete(sectionId)
+            return next
+          })
+        }, NAME_LANDING_MS)
+      }
+      window.api.board.nameSection(projectId, sessionIds).then(settle, (err) => {
+        console.warn('[sections] naming failed:', err)
+        settle()
+      })
+    },
+    [projectId, saveSection]
   )
 
   /** Groups the active cards among `ids` under a new section. */
@@ -805,14 +887,17 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
         cardObstacles(rest.filter((c) => !c.archived)),
         [zoneRef.current, ...frames]
       )
-      const section = addSection(frame)
+      // Claude names it after its sessions; a group of fresh sessions and shells has nothing to go on.
+      const nameable = targets.filter((c) => !isTerminal(c) && (c.title || c.meta))
+      const section = addSection(frame, nameable.length === 0)
       patchCards(
         targets.map((c) => ({ sessionId: c.sessionId, sectionId: section.id, ...positions.get(c.sessionId) }))
       )
+      if (nameable.length > 0) nameSection(section.id, nameable.map((c) => c.sessionId))
       clearSelection()
       ensureVisible(frame)
     },
-    [addSection, patchCards, clearSelection, ensureVisible]
+    [addSection, nameSection, patchCards, clearSelection, ensureVisible]
   )
 
   /** An empty section with its header at `p`, nudged clear of cards and other zones. */
@@ -873,7 +958,7 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
         sourceCards.length > 0
           ? {
               x: sourceCards.reduce((sum, c) => sum + c.x, 0) / sourceCards.length,
-              y: Math.max(...sourceCards.map((c) => c.y)) + CARD_H + 96
+              y: Math.max(...sourceCards.map((c) => c.y + cardSize(c).h)) + 96
             }
           : spotForNewSession(zone, all)
       // Merged sessions are active: never start them inside the archive.
@@ -904,13 +989,14 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
   const actions = useMemo<BoardActions>(
     () => ({
       rename: (sessionId, title) => patchCards([{ sessionId, title }]),
+      expand: expandCards,
       setRenaming,
       renameSection: (sectionId, name) => {
         const section = groupsRef.current.find((g) => g.section.id === sectionId)?.section
         if (section) saveSection({ ...section, name })
       }
     }),
-    [patchCards, saveSection]
+    [patchCards, saveSection, expandCards]
   )
 
   // ---- React Flow handlers -------------------------------------------------
@@ -990,11 +1076,13 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
       (n) =>
         n.type === 'session' &&
         !isTerminal((n as SessionFlowNode).data.card) &&
-        isInArchive(n.position, zone)
+        isInArchive(n.position, zone, cardSize((n as SessionFlowNode).data.card))
     )
     setArchiveHot(overArchive)
     const card = (node as SessionFlowNode).data.card
-    setHotSection(overArchive ? null : sectionAt(node.position, groupsRef.current, card.sectionId))
+    setHotSection(
+      overArchive ? null : sectionAt(node.position, groupsRef.current, card.sectionId, cardSize(card))
+    )
   }, [])
 
   const onNodeDragStop: OnNodeDrag<FlowNode> = useCallback(
@@ -1013,7 +1101,8 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
           const landed: SectionView = { ...group, frame: { ...group.frame, x: group.frame.x + dx, y: group.frame.y + dy } }
           // Ungrouped cards it now covers join it, just as if they had been dropped there.
           const covered = cardsRef.current.filter(
-            (c) => !c.archived && !c.sectionId && sectionAt(c, [landed]) === group.section.id
+            (c) =>
+              !c.archived && !c.sectionId && sectionAt(c, [landed], undefined, cardSize(c)) === group.section.id
           )
           patchCards([
             ...group.members.map((c) => ({ sessionId: c.sessionId, x: c.x + dx, y: c.y + dy })),
@@ -1051,7 +1140,7 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
       const bounced = new Map<string, Point>()
       for (const n of moved) {
         const card = byId.get(n.id)!
-        if (isTerminal(card) && isInArchive(n.position, zone)) {
+        if (isTerminal(card) && isInArchive(n.position, zone, cardSize(card))) {
           bounced.set(n.id, dragStart.current.get(n.id) ?? { x: card.x, y: card.y })
         }
       }
@@ -1061,11 +1150,12 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
 
       // Cards dragged together land in the section under the one being dragged (it's the one highlighted).
       const primary = byId.get(node.id)
-      const target = sectionAt(node.position, groupsRef.current, primary?.sectionId)
+      const target = sectionAt(node.position, groupsRef.current, primary?.sectionId, cardSize(primary))
       const patches: NodePatch[] = moved
         .filter((n) => !bounced.has(n.id))
         .map((n) => {
-          const archived = !isTerminal(byId.get(n.id)) && isInArchive(n.position, zone)
+          const card = byId.get(n.id)
+          const archived = !isTerminal(card) && isInArchive(n.position, zone, cardSize(card))
           return {
             sessionId: n.id,
             x: Math.round(n.position.x),
@@ -1110,6 +1200,11 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
       if (e.shiftKey || e.metaKey || e.ctrlKey) return
       if (renaming === node.id) return
       window.clearTimeout(titleClickTimer.current)
+      // A click on an expanded card's title bar focuses its terminal, like clicking a window.
+      if (isExpanded((node as SessionFlowNode).data.card)) {
+        focusTerminal(node.id)
+        return
+      }
       // A click on the title waits briefly so a double-click can rename instead.
       if ((e.target as Element).closest('.card-title')) {
         titleClickTimer.current = window.setTimeout(() => openCard(node.id), 240)
@@ -1298,10 +1393,27 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
     [groupCards, leaveSection]
   )
 
+  /** A card menu's first items: open it in the modal, and expand or collapse it on the board. */
+  const cardOpenItems = useCallback(
+    (card: SessionCard): MenuItem[] => {
+      const id = card.sessionId
+      return isExpanded(card)
+        ? [
+            { label: 'Open in a window', icon: <AppWindowMac />, onSelect: () => openTerminal(id) },
+            { label: 'Collapse', icon: <Minimize2 />, hint: 'E', onSelect: () => expandCards([id], false) }
+          ]
+        : [
+            { label: 'Open', icon: <SquareTerminal />, hint: '↩', onSelect: () => openTerminal(id) },
+            { label: 'Expand on board', icon: <Maximize2 />, hint: 'E', onSelect: () => expandCards([id], true) }
+          ]
+    },
+    [openTerminal, expandCards]
+  )
+
   const terminalMenu = useCallback(
     (card: SessionCard): MenuItem[] => {
       const items: MenuItem[] = [
-        { label: 'Open', icon: <SquareTerminal />, hint: '↩', onSelect: () => openTerminal(card.sessionId) },
+        ...cardOpenItems(card),
         { label: 'Rename', icon: <PencilLine />, onSelect: () => setRenaming(card.sessionId) },
         ...cardSectionItems(card)
       ]
@@ -1334,7 +1446,7 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
       })
       return items
     },
-    [openTerminal, confirm, removeCard, cardSectionItems]
+    [cardOpenItems, confirm, removeCard, cardSectionItems]
   )
 
   const onNodeContextMenu = useCallback(
@@ -1359,9 +1471,9 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
           ? sel.filter((id) => !isTerminal(byId.get(id)))
           : [card.sessionId]
       const items: MenuItem[] = [
-        card.archived
-          ? { label: 'Preview', icon: <Eye />, hint: '↩', onSelect: () => openPreview(card.sessionId) }
-          : { label: 'Open', icon: <SquareTerminal />, hint: '↩', onSelect: () => openTerminal(card.sessionId) },
+        ...(card.archived
+          ? [{ label: 'Preview', icon: <Eye />, hint: '↩', onSelect: () => openPreview(card.sessionId) }]
+          : cardOpenItems(card)),
         { label: 'Rename', icon: <PencilLine />, onSelect: () => setRenaming(card.sessionId) },
         card.archived
           ? { label: 'Restore to board', icon: <ArchiveRestore />, onSelect: () => restoreCard(card.sessionId) }
@@ -1407,7 +1519,7 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
     },
     [
       openPreview,
-      openTerminal,
+      cardOpenItems,
       restoreCard,
       archiveCards,
       startMerge,
@@ -1429,6 +1541,7 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
     selectAllActive,
     clearSelection,
     openCard,
+    expandCards,
     closeStack
   })
   latest.current = {
@@ -1439,6 +1552,7 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
     selectAllActive,
     clearSelection,
     openCard,
+    expandCards,
     closeStack
   }
 
@@ -1476,6 +1590,13 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
       } else if (e.key.toLowerCase() === 't' && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault()
         fns.createTerminal()
+      } else if (e.key.toLowerCase() === 'e' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        // Expands the selected cards, or collapses them when they all are already.
+        const active = cardsRef.current.filter((c) => sel.includes(c.sessionId) && !c.archived)
+        if (active.length) {
+          e.preventDefault()
+          fns.expandCards(sel, active.some((c) => !isExpanded(c)))
+        }
       }
     }
     window.addEventListener('keydown', onKey)
@@ -1501,149 +1622,151 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
       <RenamingContext.Provider value={renaming}>
         <ArchiveHotContext.Provider value={archiveHot}>
           <SectionHotContext.Provider value={hotSection}>
-            <ArchiveStackContext.Provider value={stackCtx}>
-              <div
-                className={clsx(
-                  'board-canvas',
-                  movingArchive && 'is-moving-archive',
-                  movingSection && 'is-moving-section',
-                  stackScrolling && 'is-scrolling-stack',
-                  !stackOpen && ((stackHover && !stackDismissed) || archiveHot) && 'stack-lift'
-                )}
-                ref={wrapperRef}
-                onDoubleClick={onPaneDoubleClick}
-                onPointerMove={onCanvasPointerMove}
-                onWheel={onCanvasWheel}
-                onPointerLeave={() => {
-                setStackHover(false)
-                setStackDismissed(false)
-              }}
-              >
-                <TitleBarActions>
-                  <button
-                    className="btn btn-ghost no-drag"
-                    onClick={() => createTerminal()}
-                    title="New terminal in the project folder (⌘T)"
-                  >
-                    <SquareTerminal size={15} strokeWidth={2} />
-                    Terminal
-                  </button>
-                  <button className="btn no-drag" onClick={() => createSession()} title="New session (⌘N)">
-                    <Plus size={15} strokeWidth={2.2} />
-                    New Session
-                  </button>
-                </TitleBarActions>
-
-                <ReactFlow<FlowNode, Edge>
-                  edgeTypes={edgeTypes}
-                  nodes={nodes}
-                  edges={edges}
-                  nodeTypes={nodeTypes}
-                  onNodesChange={onNodesChange}
-                  onNodeDragStart={onNodeDragStart}
-                  onNodeDrag={onNodeDrag}
-                  onNodeDragStop={onNodeDragStop}
-                  onNodeClick={onNodeClick}
-                  onNodeDoubleClick={onNodeDoubleClick}
-                  onNodeContextMenu={onNodeContextMenu}
-                  onPaneContextMenu={onPaneContextMenu}
-                  onPaneClick={() => setMenu(null)}
-                  onSelectionChange={onSelectionChange}
-                  onMoveStart={() => setMenu(null)}
-                  onMoveEnd={onMoveEnd}
-                  defaultViewport={board.viewport}
-                  onInit={() => {
-                    if (!board.viewport) fitActive(0)
-                  }}
-                  minZoom={0.1}
-                  maxZoom={2}
-                  panOnScroll
-                  zoomOnPinch
-                  zoomOnDoubleClick={false}
-                  selectionOnDrag
-                  selectionMode={SelectionMode.Partial}
-                  panOnDrag={[1]}
-                  panActivationKeyCode="Space"
-                  selectionKeyCode={null}
-                  multiSelectionKeyCode={['Meta', 'Shift']}
-                  deleteKeyCode={null}
-                  disableKeyboardA11y
-                  nodesConnectable={false}
-                  elevateNodesOnSelect
-                  onlyRenderVisibleElements={cards.length > 150}
-                  proOptions={{ hideAttribution: true }}
+            <SectionNamingContext.Provider value={naming}>
+              <ArchiveStackContext.Provider value={stackCtx}>
+                <div
+                  className={clsx(
+                    'board-canvas',
+                    movingArchive && 'is-moving-archive',
+                    movingSection && 'is-moving-section',
+                    stackScrolling && 'is-scrolling-stack',
+                    !stackOpen && ((stackHover && !stackDismissed) || archiveHot) && 'stack-lift'
+                  )}
+                  ref={wrapperRef}
+                  onDoubleClick={onPaneDoubleClick}
+                  onPointerMove={onCanvasPointerMove}
+                  onWheel={onCanvasWheel}
+                  onPointerLeave={() => {
+                  setStackHover(false)
+                  setStackDismissed(false)
+                }}
                 >
-                  <Background
-                    variant={BackgroundVariant.Dots}
-                    gap={22}
-                    size={1.6}
-                    color="var(--canvas-dot)"
-                    bgColor="var(--bg-canvas)"
-                  />
-                  <MiniMap<FlowNode>
-                    className="board-minimap"
-                    style={{ width: 176, height: 118 }}
-                    pannable
-                    zoomable
-                    nodeBorderRadius={6}
-                    nodeColor={(n) => {
-                      if (n.type === 'archive') return 'var(--archive-bg)'
-                      // A faint wash of the section's colour (hex + alpha).
-                      if (n.type === 'section') return `${sectionHue(n)}24`
-                      const card = (n as SessionFlowNode).data.card
-                      return isTerminal(card) ? 'var(--text-tertiary)' : STATUS_COLOR[card.status]
+                  <TitleBarActions>
+                    <button
+                      className="btn btn-ghost no-drag"
+                      onClick={() => createTerminal()}
+                      title="New terminal in the project folder (⌘T)"
+                    >
+                      <SquareTerminal size={15} strokeWidth={2} />
+                      Terminal
+                    </button>
+                    <button className="btn no-drag" onClick={() => createSession()} title="New session (⌘N)">
+                      <Plus size={15} strokeWidth={2.2} />
+                      New Session
+                    </button>
+                  </TitleBarActions>
+
+                  <ReactFlow<FlowNode, Edge>
+                    edgeTypes={edgeTypes}
+                    nodes={nodes}
+                    edges={edges}
+                    nodeTypes={nodeTypes}
+                    onNodesChange={onNodesChange}
+                    onNodeDragStart={onNodeDragStart}
+                    onNodeDrag={onNodeDrag}
+                    onNodeDragStop={onNodeDragStop}
+                    onNodeClick={onNodeClick}
+                    onNodeDoubleClick={onNodeDoubleClick}
+                    onNodeContextMenu={onNodeContextMenu}
+                    onPaneContextMenu={onPaneContextMenu}
+                    onPaneClick={() => setMenu(null)}
+                    onSelectionChange={onSelectionChange}
+                    onMoveStart={() => setMenu(null)}
+                    onMoveEnd={onMoveEnd}
+                    defaultViewport={board.viewport}
+                    onInit={() => {
+                      if (!board.viewport) fitActive(0)
                     }}
-                    nodeStrokeColor={(n) => {
-                      if (n.type === 'archive') return 'var(--archive-border)'
-                      if (n.type === 'section') return sectionHue(n)
-                      return 'transparent'
-                    }}
-                    nodeStrokeWidth={3}
-                  />
-                  <BoardControls onFit={fitActive} />
-                </ReactFlow>
+                    minZoom={0.1}
+                    maxZoom={2}
+                    panOnScroll
+                    zoomOnPinch
+                    zoomOnDoubleClick={false}
+                    selectionOnDrag
+                    selectionMode={SelectionMode.Partial}
+                    panOnDrag={[1]}
+                    panActivationKeyCode="Space"
+                    selectionKeyCode={null}
+                    multiSelectionKeyCode={['Meta', 'Shift']}
+                    deleteKeyCode={null}
+                    disableKeyboardA11y
+                    nodesConnectable={false}
+                    elevateNodesOnSelect
+                    onlyRenderVisibleElements={cards.length > 150}
+                    proOptions={{ hideAttribution: true }}
+                  >
+                    <Background
+                      variant={BackgroundVariant.Dots}
+                      gap={22}
+                      size={1.6}
+                      color="var(--canvas-dot)"
+                      bgColor="var(--bg-canvas)"
+                    />
+                    <MiniMap<FlowNode>
+                      className="board-minimap"
+                      style={{ width: 176, height: 118 }}
+                      pannable
+                      zoomable
+                      nodeBorderRadius={6}
+                      nodeColor={(n) => {
+                        if (n.type === 'archive') return 'var(--archive-bg)'
+                        // A faint wash of the section's colour (hex + alpha).
+                        if (n.type === 'section') return `${sectionHue(n)}24`
+                        const card = (n as SessionFlowNode).data.card
+                        return isTerminal(card) ? 'var(--text-tertiary)' : STATUS_COLOR[card.status]
+                      }}
+                      nodeStrokeColor={(n) => {
+                        if (n.type === 'archive') return 'var(--archive-border)'
+                        if (n.type === 'section') return sectionHue(n)
+                        return 'transparent'
+                      }}
+                      nodeStrokeWidth={3}
+                    />
+                    <BoardControls onFit={fitActive} />
+                  </ReactFlow>
 
-                {activeCount === 0 && (
-                  <div className="board-hint" aria-hidden>
-                    <p className="board-hint-title">No active sessions</p>
-                    <p className="board-hint-body">
-                      Double-click anywhere or press <kbd>N</kbd> to start a Claude session, or{' '}
-                      <kbd>T</kbd> for a terminal. Drag cards out of the archive to reactivate them.
-                    </p>
-                  </div>
-                )}
+                  {activeCount === 0 && (
+                    <div className="board-hint" aria-hidden>
+                      <p className="board-hint-title">No active sessions</p>
+                      <p className="board-hint-body">
+                        Double-click anywhere or press <kbd>N</kbd> to start a Claude session, or{' '}
+                        <kbd>T</kbd> for a terminal. Drag cards out of the archive to reactivate them.
+                      </p>
+                    </div>
+                  )}
 
-                {selectedCards.length > 0 && !merge && (
-                  <SelectionBar
-                    count={selectedCards.length}
-                    sessionCount={selectedCards.filter((c) => !isTerminal(c)).length}
-                    activeCount={selectedCards.filter((c) => !c.archived && !isTerminal(c)).length}
-                    groupCount={selectedCards.filter((c) => !c.archived).length}
-                    onMerge={() => startMerge(selectedCards.map((c) => c.sessionId))}
-                    onGroup={() => groupCards(selectedCards.map((c) => c.sessionId))}
-                    onArchive={() => archiveCards(selectedCards.map((c) => c.sessionId))}
-                    onClear={clearSelection}
-                  />
-                )}
+                  {selectedCards.length > 0 && !merge && (
+                    <SelectionBar
+                      count={selectedCards.length}
+                      sessionCount={selectedCards.filter((c) => !isTerminal(c)).length}
+                      activeCount={selectedCards.filter((c) => !c.archived && !isTerminal(c)).length}
+                      groupCount={selectedCards.filter((c) => !c.archived).length}
+                      onMerge={() => startMerge(selectedCards.map((c) => c.sessionId))}
+                      onGroup={() => groupCards(selectedCards.map((c) => c.sessionId))}
+                      onArchive={() => archiveCards(selectedCards.map((c) => c.sessionId))}
+                      onClear={clearSelection}
+                    />
+                  )}
 
-                {toast && (
-                  <div className="board-toast" role="status">
-                    {toast}
-                  </div>
-                )}
-              </div>
-            </ArchiveStackContext.Provider>
+                  {toast && (
+                    <div className="board-toast" role="status">
+                      {toast}
+                    </div>
+                  )}
+                </div>
+              </ArchiveStackContext.Provider>
 
-            {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={closeMenu} />}
-            <ConfirmDialog request={confirmReq} />
-            {merge && (
-              <MergeDialog
-                projectId={projectId}
-                sources={merge}
-                onClose={() => setMerge(null)}
-                onStart={onMergeStart}
-              />
-            )}
+              {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={closeMenu} />}
+              <ConfirmDialog request={confirmReq} />
+              {merge && (
+                <MergeDialog
+                  projectId={projectId}
+                  sources={merge}
+                  onClose={() => setMerge(null)}
+                  onStart={onMergeStart}
+                />
+              )}
+            </SectionNamingContext.Provider>
           </SectionHotContext.Provider>
         </ArchiveHotContext.Provider>
       </RenamingContext.Provider>

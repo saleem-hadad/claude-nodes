@@ -83,6 +83,11 @@ export interface BoardNode {
   createdByApp?: boolean
   /** Section the card is grouped under. Archived cards never belong to one. */
   sectionId?: string
+  /** The card is expanded in place, showing its terminal on the board. Active cards only. */
+  expanded?: boolean
+  /** Size of the expanded card, once it has been resized. */
+  w?: number
+  h?: number
   createdAt: number
 }
 
@@ -125,6 +130,9 @@ export interface NodePatch {
   title?: string
   /** null takes the card out of its section. */
   sectionId?: string | null
+  expanded?: boolean
+  w?: number
+  h?: number
 }
 
 export interface CreateSessionOptions {

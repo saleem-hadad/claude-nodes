@@ -1,9 +1,10 @@
 import { memo, useContext, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useStore, type Node, type NodeProps } from '@xyflow/react'
 import clsx from 'clsx'
+import { Sparkles } from 'lucide-react'
 import type { BoardSection } from '@shared/types'
 import { FOLDER_HUES } from '../FolderIcon'
-import { RenamingContext, SectionHotContext, useBoardActions } from './BoardContext'
+import { RenamingContext, SectionHotContext, SectionNamingContext, useBoardActions } from './BoardContext'
 import { CARD_H, CARD_W } from './layout'
 import { SECTION_HEADER_H, SECTION_PAD } from './sections'
 
@@ -26,6 +27,8 @@ const labelScale = (zoom: number) => Math.min(2.2, Math.max(1, 1 / zoom))
 function SectionNodeComponent({ id, data, dragging }: NodeProps<SectionFlowNode>) {
   const hot = useContext(SectionHotContext) === id
   const renaming = useContext(RenamingContext) === id
+  /** null while Claude names the section, then the name it gave while that lands. */
+  const naming = useContext(SectionNamingContext).get(id)
   const scale = useStore((s) => labelScale(s.transform[2]))
   const { section, count, status } = data
 
@@ -34,6 +37,14 @@ function SectionNodeComponent({ id, data, dragging }: NodeProps<SectionFlowNode>
       className={clsx('section-zone', hot && 'is-hot', dragging && 'is-dragging')}
       style={{ '--section-hue': FOLDER_HUES[section.color].backBottom } as CSSProperties}
     >
+      {naming !== undefined && (
+        <div className={clsx('section-glow', naming !== null && 'is-fading')} aria-hidden>
+          <div className="section-glow-halo">
+            <div className="section-glow-ring" />
+          </div>
+          <div className="section-glow-ring" />
+        </div>
+      )}
       <div className="section-header" title="Drag to move the section and its cards">
         {/* Scaled up when zoomed out, so its max width shrinks to still fit the header. */}
         <div
@@ -42,6 +53,13 @@ function SectionNodeComponent({ id, data, dragging }: NodeProps<SectionFlowNode>
         >
           {renaming ? (
             <NameEditor sectionId={id} initial={section.name} />
+          ) : naming === null ? (
+            <span className="section-name is-naming" title="Claude is naming this section">
+              <Sparkles className="section-sparkle" size={13} strokeWidth={2} aria-hidden />
+              <span className="section-naming-text">Naming…</span>
+            </span>
+          ) : naming ? (
+            <RevealName name={naming} />
           ) : (
             <span className={clsx('section-name', !section.name && 'is-untitled')}>
               {section.name || 'Untitled section'}
@@ -61,6 +79,25 @@ function SectionNodeComponent({ id, data, dragging }: NodeProps<SectionFlowNode>
         </div>
       )}
     </div>
+  )
+}
+
+/** Delay between the letters of a name Claude gave, capped so long names still land quickly. */
+const REVEAL_STEP_MS = 28
+const REVEAL_SPREAD_MS = 480
+
+/** A name from Claude, fading in letter by letter. */
+function RevealName({ name }: { name: string }) {
+  const letters = Array.from(name)
+  const step = Math.min(REVEAL_STEP_MS, REVEAL_SPREAD_MS / Math.max(1, letters.length - 1))
+  return (
+    <span className="section-name is-revealing" aria-label={name}>
+      {letters.map((ch, i) => (
+        <span key={i} aria-hidden style={{ animationDelay: `${Math.round(i * step)}ms` }}>
+          {ch}
+        </span>
+      ))}
+    </span>
   )
 }
 

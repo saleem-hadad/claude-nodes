@@ -1,11 +1,12 @@
-import { memo, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
-import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
-import { GitBranch, GitMerge, MessageSquare, SquareTerminal } from 'lucide-react'
+import { memo, useCallback, useContext, useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
+import { Handle, NodeResizer, Position, type Node, type NodeProps, type OnResizeEnd } from '@xyflow/react'
+import { GitBranch, GitMerge, Maximize2, MessageSquare, SquareTerminal } from 'lucide-react'
 import clsx from 'clsx'
 import type { SessionCard } from '@shared/types'
 import { cardTitle, isTerminal, tildePath, useApp } from '@renderer/store'
 import { RenamingContext, useBoardActions } from './BoardContext'
-import { timeAgo } from './layout'
+import { ExpandedCard } from './ExpandedCard'
+import { EXPANDED_MIN_H, EXPANDED_MIN_W, isExpanded, timeAgo } from './layout'
 
 export type SessionNodeData = {
   card: SessionCard
@@ -20,9 +21,22 @@ const STATUS_LABEL = {
   done: 'Done'
 } as const
 
+const stop = (e: MouseEvent) => e.stopPropagation()
+
 function SessionCardNodeComponent({ data, selected, dragging }: NodeProps<SessionFlowNode>) {
   const { card } = data
   const renaming = useContext(RenamingContext) === card.sessionId
+  const { expand } = useBoardActions()
+  const patchCards = useApp((s) => s.patchCards)
+  const id = card.sessionId
+  // Stable, so React Flow doesn't rebind the resize handles on every render.
+  const onResizeEnd = useCallback<OnResizeEnd>(
+    (_e, r) =>
+      patchCards([
+        { sessionId: id, x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) }
+      ]),
+    [id, patchCards]
+  )
   const repoPath = useApp((s) => s.board?.project.repoPath)
   const meta = card.meta
   const title = cardTitle(card)
@@ -36,42 +50,85 @@ function SessionCardNodeComponent({ data, selected, dragging }: NodeProps<Sessio
   else if (meta?.firstPrompt) preview = { text: meta.firstPrompt, kind: 'prompt' }
   else preview = { text: 'No messages yet', kind: 'empty' }
 
-  return (
-    <div
-      className={clsx(
-        'session-card',
-        shell && 'is-terminal',
-        card.archived && 'is-archived',
-        selected && 'is-selected',
-        dragging && 'is-dragging'
+  const heading = (
+    <>
+      {shell ? (
+        <span className="card-shell" data-live={card.live} title={`Terminal · ${statusLabel}`}>
+          <SquareTerminal size={14} strokeWidth={2} />
+        </span>
+      ) : (
+        <span className="status-dot" data-status={card.status} title={statusLabel} />
       )}
-      data-status={card.status}
-      aria-label={`${title}, ${statusLabel}`}
-    >
+      {renaming ? (
+        <TitleEditor sessionId={card.sessionId} initial={card.title || meta?.title || ''} />
+      ) : (
+        <h3 className="card-title" title={title}>
+          {data.match?.length ? highlight(title, data.match) : title}
+        </h3>
+      )}
+      {card.live && !shell && (
+        <span className="card-live" title="Claude process running">
+          <SquareTerminal size={13} strokeWidth={2} />
+        </span>
+      )}
+    </>
+  )
+
+  const className = clsx(
+    'session-card',
+    shell && 'is-terminal',
+    card.archived && 'is-archived',
+    selected && 'is-selected',
+    dragging && 'is-dragging'
+  )
+  const handles = (
+    <>
       <Handle type="target" position={Position.Top} isConnectable={false} className="card-handle" />
       <Handle type="source" position={Position.Bottom} isConnectable={false} className="card-handle" />
+    </>
+  )
 
-      <header className="card-head">
-        {shell ? (
-          <span className="card-shell" data-live={card.live} title={`Terminal · ${statusLabel}`}>
-            <SquareTerminal size={14} strokeWidth={2} />
-          </span>
-        ) : (
-          <span className="status-dot" data-status={card.status} title={statusLabel} />
-        )}
-        {renaming ? (
-          <TitleEditor sessionId={card.sessionId} initial={card.title || meta?.title || ''} />
-        ) : (
-          <h3 className="card-title" title={title}>
-            {data.match?.length ? highlight(title, data.match) : title}
-          </h3>
-        )}
-        {card.live && !shell && (
-          <span className="card-live" title="Claude process running">
-            <SquareTerminal size={13} strokeWidth={2} />
-          </span>
-        )}
-      </header>
+  if (isExpanded(card)) {
+    return (
+      <>
+        <div
+          className={clsx(className, 'is-expanded')}
+          data-status={card.status}
+          aria-label={`${title}, ${statusLabel}`}
+        >
+          {handles}
+          <ExpandedCard card={card} heading={heading} />
+        </div>
+        <NodeResizer
+          minWidth={EXPANDED_MIN_W}
+          minHeight={EXPANDED_MIN_H}
+          lineClassName="card-resize-line"
+          handleClassName="card-resize-handle"
+          onResizeEnd={onResizeEnd}
+        />
+      </>
+    )
+  }
+
+  return (
+    <div className={className} data-status={card.status} aria-label={`${title}, ${statusLabel}`}>
+      {handles}
+
+      <header className="card-head">{heading}</header>
+      {!card.archived && (
+        <button
+          className="card-expand nodrag"
+          onClick={(e) => {
+            e.stopPropagation()
+            expand([card.sessionId], true)
+          }}
+          onDoubleClick={stop}
+          title="Expand on the board (E)"
+          aria-label="Expand on the board"
+        >
+          <Maximize2 size={13} strokeWidth={2} />
+        </button>
+      )}
 
       {card.parents && card.parents.length > 0 && (
         <div className="card-chip" title="Started from the context of earlier sessions">

@@ -42,7 +42,12 @@ export function TitleBar() {
               Projects
             </button>
             <ChevronRight className="titlebar-crumb-sep" size={13} strokeWidth={2.2} />
-            <span className="titlebar-current" title={project?.repoPath}>
+            {/* no-drag: a drag region swallows double-clicks to zoom the window. */}
+            <span
+              className="titlebar-current no-drag"
+              title={project && `${project.repoPath}\nDouble-click to reveal in Finder`}
+              onDoubleClick={() => project && window.api.projects.revealInFinder(project.id)}
+            >
               <FolderIcon size={18} color={project?.color} />
               <span className="titlebar-current-name">{project?.name ?? ''}</span>
             </span>
