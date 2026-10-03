@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { ChevronLeft, ChevronRight, Settings } from 'lucide-react'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useApp } from '@renderer/store'
 import { FolderIcon } from './FolderIcon'
 import { GitControls } from './git/GitControls'
@@ -61,17 +61,7 @@ export function TitleBar() {
         )}
       </nav>
 
-      <div className="titlebar-end">
-        <div id={TITLEBAR_ACTIONS_ID} className="titlebar-actions no-drag" />
-        <button
-          className="btn btn-ghost btn-icon titlebar-settings no-drag"
-          onClick={() => useApp.getState().openSettings()}
-          title="Settings (⌘,)"
-          aria-label="Settings"
-        >
-          <Settings size={16} strokeWidth={2} />
-        </button>
-      </div>
+      <div id={TITLEBAR_ACTIONS_ID} className="titlebar-actions no-drag" />
     </header>
   )
 }

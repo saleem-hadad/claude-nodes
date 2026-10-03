@@ -63,7 +63,7 @@ Transcripts stay where Claude Code keeps them. The app stores only the board lay
 | Where | Action | Shortcut |
 | --- | --- | --- |
 | Anywhere | Add a project | ⌘⇧N |
-| | Settings (theme: System, Light or Dark) | ⌘, · gear in the title bar |
+| | Settings (theme: System, Light or Dark) | ⌘, |
 | | Close the modal, or go back to projects | ⌘W |
 | Projects | Open the selected project | Double-click · ⌘O · ⌘↓ |
 | | Rename · remove | Enter · ⌘⌫ |

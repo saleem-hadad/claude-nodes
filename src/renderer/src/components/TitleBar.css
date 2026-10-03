@@ -72,23 +72,9 @@
   text-overflow: ellipsis;
 }
 
-.titlebar-end {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: none;
-}
-
 .titlebar-actions {
   display: flex;
   align-items: center;
   gap: 8px;
   flex: none;
-}
-
-.titlebar-settings {
-  color: var(--text-secondary);
-}
-.titlebar-settings:hover {
-  color: var(--text-primary);
 }

@@ -12,7 +12,7 @@ const THEMES: { value: ThemePreference; label: string }[] = [
   { value: 'dark', label: 'Dark' }
 ]
 
-/** App-wide preferences, opened with Cmd+, or the gear in the title bar. */
+/** App-wide preferences, opened with Cmd+, (Claude Nodes › Settings…). */
 export function SettingsDialog() {
   const open = useApp((s) => s.settingsOpen)
   const close = useApp((s) => s.closeSettings)
