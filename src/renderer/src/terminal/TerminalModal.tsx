@@ -7,7 +7,6 @@ import {
   LoaderCircle,
   Play,
   RotateCcw,
-  Square,
   SquareTerminal,
   Trash2,
   X
@@ -202,20 +201,6 @@ function TerminalHeader({
               Resume
             </button>
           ))}
-        {card?.live && (
-          <button
-            className="btn"
-            onClick={() => window.api.sessions.kill(sessionId)}
-            title={
-              shell
-                ? 'Stop the shell and everything running in it'
-                : 'Stop the Claude process (the session can be resumed later)'
-            }
-          >
-            <Square size={12} />
-            Stop
-          </button>
-        )}
         {shell ? (
           <button className="btn" onClick={remove} title="Stop the shell and remove this terminal from the board">
             <Trash2 size={13} />

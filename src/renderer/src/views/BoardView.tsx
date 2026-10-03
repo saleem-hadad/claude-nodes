@@ -39,7 +39,6 @@ import {
   Sparkles,
   SquareDashed,
   SquareTerminal,
-  Square,
   Trash2,
   BoxSelect,
   Ungroup
@@ -1417,15 +1416,6 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
         { label: 'Rename', icon: <PencilLine />, onSelect: () => setRenaming(card.sessionId) },
         ...cardSectionItems(card)
       ]
-      if (card.live) {
-        items.push({
-          label: 'Stop shell',
-          icon: <Square />,
-          onSelect: () => {
-            window.api.sessions.kill(card.sessionId)
-          }
-        })
-      }
       items.push('separator', {
         label: 'Remove terminal',
         icon: <Trash2 />,
@@ -1490,15 +1480,6 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
         },
         ...cardSectionItems(card)
       ]
-      if (card.live) {
-        items.push({
-          label: 'Stop process',
-          icon: <Square />,
-          onSelect: () => {
-            window.api.sessions.kill(card.sessionId)
-          }
-        })
-      }
       items.push('separator', {
         label: 'Remove from board',
         icon: <Trash2 />,
