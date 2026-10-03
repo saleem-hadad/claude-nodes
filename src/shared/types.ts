@@ -182,3 +182,45 @@ export interface AppInfo {
   claudeVersion: string | null
   platform: string
 }
+
+/** 'system' follows the macOS appearance; the others pin the app to it. */
+export type ThemePreference = 'system' | 'light' | 'dark'
+
+/** App-wide preferences, persisted with the rest of the state. */
+export interface AppSettings {
+  theme: ThemePreference
+}
+
+/**
+ * How a changed file differs from HEAD. Untracked files are new files git
+ * doesn't know about yet; they read as added in the UI.
+ */
+export type GitFileStatus = 'modified' | 'added' | 'deleted' | 'renamed' | 'conflicted' | 'untracked'
+
+export interface GitFileChange {
+  /** Path relative to the repository root. */
+  path: string
+  /** For renames, the path in HEAD. */
+  oldPath?: string
+  status: GitFileStatus
+}
+
+/** The project's repository: its branch and uncommitted changes. */
+export interface GitStatus {
+  /** Null on a detached HEAD. */
+  branch: string | null
+  /** The commit HEAD points at; null before the first commit. */
+  oid: string | null
+  upstream?: string
+  /** Commits ahead of / behind the upstream branch. */
+  ahead: number
+  behind: number
+  files: GitFileChange[]
+}
+
+export interface GitFileDiff {
+  /** Unified diff of the file against HEAD; empty for binary or oversized diffs. */
+  patch: string
+  binary?: boolean
+  tooLarge?: boolean
+}

@@ -1540,7 +1540,7 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const s = useApp.getState()
-      if (s.terminalSessionId || s.previewSessionId || overlayOpenRef.current) return
+      if (s.terminalSessionId || s.previewSessionId || s.diffOpen || overlayOpenRef.current) return
       const target = e.target as HTMLElement | null
       if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
       const sel = selectedIds()
@@ -1582,7 +1582,7 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
     }
     window.addEventListener('keydown', onKey)
     const offMenu = window.api.on.menu((command) => {
-      if (overlayOpenRef.current) return
+      if (overlayOpenRef.current || useApp.getState().diffOpen) return
       if (command === 'new-session') latest.current.createSession()
       else if (command === 'new-terminal') latest.current.createTerminal()
     })

@@ -2,10 +2,20 @@
 import { app } from 'electron'
 import fs from 'fs'
 import path from 'path'
-import type { BoardNode, BoardSection, Project, Rect, Viewport } from '@shared/types'
+import type { AppSettings, BoardNode, BoardSection, Project, Rect, Viewport } from '@shared/types'
 
 /** Six 288px card columns with 24px gaps and 40px side padding. */
 const DEFAULT_ARCHIVE_W = 2 * 40 + 6 * 288 + 5 * 24
+
+const THEMES: AppSettings['theme'][] = ['system', 'light', 'dark']
+
+/** Fills in defaults and drops values this version doesn't understand. */
+export function normalizeSettings(raw: unknown): AppSettings {
+  const s = (raw && typeof raw === 'object' ? raw : {}) as Partial<AppSettings>
+  return {
+    theme: s.theme && THEMES.includes(s.theme) ? s.theme : 'system'
+  }
+}
 
 export interface BoardState {
   nodes: Record<string, BoardNode>
@@ -19,9 +29,10 @@ export interface BoardState {
 export interface State {
   projects: Project[]
   boards: Record<string, BoardState>
+  settings: AppSettings
 }
 
-let state: State = { projects: [], boards: {} }
+let state: State = { projects: [], boards: {}, settings: normalizeSettings(null) }
 let saveTimer: NodeJS.Timeout | null = null
 
 function statePath() {
@@ -33,10 +44,11 @@ export function loadState() {
     const raw = JSON.parse(fs.readFileSync(statePath(), 'utf8')) as Partial<State>
     state = {
       projects: Array.isArray(raw.projects) ? raw.projects : [],
-      boards: raw.boards && typeof raw.boards === 'object' ? raw.boards : {}
+      boards: raw.boards && typeof raw.boards === 'object' ? raw.boards : {},
+      settings: normalizeSettings(raw.settings)
     }
   } catch {
-    state = { projects: [], boards: {} }
+    state = { projects: [], boards: {}, settings: normalizeSettings(null) }
   }
 }
 

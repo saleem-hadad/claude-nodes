@@ -13,6 +13,8 @@ export function installMenu(send: (command: MenuCommand) => void) {
       submenu: [
         { role: 'about' },
         { type: 'separator' },
+        { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: () => send('settings') },
+        { type: 'separator' },
         { role: 'services' },
         { type: 'separator' },
         { role: 'hide' },

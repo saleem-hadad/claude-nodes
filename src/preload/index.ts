@@ -13,6 +13,11 @@ const api: Api = {
   appInfo: () => ipcRenderer.invoke(IPC.appInfo),
   pathForFile: (file) => webUtils.getPathForFile(file),
 
+  settings: {
+    get: () => ipcRenderer.invoke(IPC.settingsGet),
+    update: (patch) => ipcRenderer.invoke(IPC.settingsUpdate, patch)
+  },
+
   projects: {
     list: () => ipcRenderer.invoke(IPC.projectsList),
     add: (repoPath) => ipcRenderer.invoke(IPC.projectsAdd, repoPath),
@@ -50,6 +55,11 @@ const api: Api = {
       ipcRenderer.invoke(IPC.sessionTranscript, projectId, sessionId),
     summarize: (projectId, sessionIds, requestId) =>
       ipcRenderer.invoke(IPC.sessionSummarize, projectId, sessionIds, requestId)
+  },
+
+  git: {
+    status: (projectId) => ipcRenderer.invoke(IPC.gitStatus, projectId),
+    diff: (projectId, file) => ipcRenderer.invoke(IPC.gitDiff, projectId, file)
   },
 
   on: {

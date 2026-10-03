@@ -1,0 +1,195 @@
+.settings-dialog {
+  width: 440px;
+}
+
+.settings-inner:focus-visible {
+  outline: none;
+}
+
+.settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 12px 12px 22px;
+  border-bottom: 0.5px solid var(--separator);
+}
+
+.settings-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+.settings-body {
+  padding: 18px 22px 22px;
+}
+
+.settings-group {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.settings-label {
+  margin-bottom: 12px;
+  padding: 0;
+  font-weight: 600;
+}
+
+.settings-hint {
+  margin: 14px 0 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+/* Theme tiles */
+.settings-themes {
+  display: flex;
+  gap: 16px;
+}
+
+.settings-theme {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The native radio stays in the tab order (arrow keys switch themes) but is drawn by its tile. */
+.settings-theme-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.settings-theme-name {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+.settings-theme-input:checked ~ .settings-theme-name {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.settings-preview {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  border-radius: 7px;
+  box-shadow: 0 0 0 0.5px var(--border-strong), var(--shadow-sm);
+  transition: box-shadow var(--dur-fast) ease;
+}
+.settings-theme:hover .settings-preview {
+  box-shadow: 0 0 0 0.5px var(--border-strong), var(--shadow-md);
+}
+.settings-theme-input:checked + .settings-preview {
+  box-shadow: 0 0 0 2px var(--bg-elevated), 0 0 0 4px var(--accent);
+}
+.settings-theme-input:focus-visible + .settings-preview {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 5px;
+}
+
+/*
+ * Miniature board window. Each tone pins its own colours (from tokens.css) so
+ * the preview shows that theme whatever the app is currently using.
+ */
+.mini-window {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--mw-canvas);
+}
+.mini-window.is-light {
+  --mw-canvas: #f3f3f1;
+  --mw-bar: #ebebea;
+  --mw-card: #ffffff;
+  --mw-border: rgba(0, 0, 0, 0.09);
+  --mw-line: rgba(0, 0, 0, 0.12);
+  --mw-dot: rgba(0, 0, 0, 0.13);
+}
+.mini-window.is-dark {
+  --mw-canvas: #19191b;
+  --mw-bar: #262629;
+  --mw-card: #2a2a2d;
+  --mw-border: rgba(255, 255, 255, 0.09);
+  --mw-line: rgba(255, 255, 255, 0.16);
+  --mw-dot: rgba(255, 255, 255, 0.11);
+}
+/* System: dark lays over light on the right, split on a diagonal like macOS's Auto. */
+.mini-window.is-split {
+  clip-path: polygon(62% 0, 100% 0, 100% 100%, 38% 100%);
+}
+
+.mini-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  height: 13px;
+  padding: 0 6px;
+  background: var(--mw-bar);
+  border-bottom: 0.5px solid var(--mw-border);
+}
+
+.mini-light {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #ff5f57;
+}
+.mini-light:nth-child(2) {
+  background: #febc2e;
+}
+.mini-light:nth-child(3) {
+  background: #28c840;
+}
+
+.mini-canvas {
+  display: flex;
+  flex: 1;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 9px 8px;
+  background-image: radial-gradient(var(--mw-dot) 0.6px, transparent 0.9px);
+  background-size: 6px 6px;
+}
+
+.mini-card {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  padding: 5px;
+  border-radius: 4px;
+  background: var(--mw-card);
+  box-shadow: 0 0 0 0.5px var(--mw-border), 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.mini-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--status-done);
+}
+.mini-dot[data-status='working'] {
+  background: var(--status-working);
+}
+
+.mini-line {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--mw-line);
+}
+.mini-line.is-short {
+  width: 60%;
+}

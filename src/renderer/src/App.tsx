@@ -5,6 +5,8 @@ import { ProjectsView } from './views/ProjectsView'
 import { BoardView } from './views/BoardView'
 import { TerminalModal } from './terminal/TerminalModal'
 import { TranscriptPreview } from './terminal/TranscriptPreview'
+import { DiffModal } from './components/git/DiffModal'
+import { SettingsDialog } from './components/SettingsDialog'
 
 export function App() {
   const route = useApp((s) => s.route)
@@ -33,10 +35,13 @@ export function App() {
 
     // Cmd+W closes the top-most layer and never the window itself.
     const offMenu = window.api.on.menu((command) => {
+      if (command === 'settings') useApp.getState().openSettings()
       if (command !== 'close') return
       const s = useApp.getState()
-      if (s.terminalSessionId) s.closeTerminal()
+      if (s.settingsOpen) s.closeSettings()
+      else if (s.terminalSessionId) s.closeTerminal()
       else if (s.previewSessionId) s.closePreview()
+      else if (s.diffOpen) s.closeDiff()
       else if (s.route.view === 'board') s.navigate({ view: 'projects' })
     })
 
@@ -68,6 +73,8 @@ export function App() {
       </main>
       <TerminalModal />
       <TranscriptPreview />
+      <DiffModal />
+      <SettingsDialog />
     </div>
   )
 }

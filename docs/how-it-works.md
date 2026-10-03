@@ -56,13 +56,14 @@ This makes one Claude request per selected session, so it counts toward your Cla
 
 ## Your data
 
-Transcripts stay where Claude Code keeps them. The app stores only the board layout (projects, card positions, sections, archive, custom titles and lineage) in `~/Library/Application Support/Claude Nodes/state.json`. *Remove from board* hides a card and never deletes a transcript.
+Transcripts stay where Claude Code keeps them. The app stores only the board layout (projects, card positions, sections, archive, custom titles and lineage) and its settings (theme) in `~/Library/Application Support/Claude Nodes/state.json`. *Remove from board* hides a card and never deletes a transcript.
 
 ## Shortcuts
 
 | Where | Action | Shortcut |
 | --- | --- | --- |
 | Anywhere | Add a project | ⌘⇧N |
+| | Settings (theme: System, Light or Dark) | ⌘, · gear in the title bar |
 | | Close the modal, or go back to projects | ⌘W |
 | Projects | Open the selected project | Double-click · ⌘O · ⌘↓ |
 | | Rename · remove | Enter · ⌘⌫ |

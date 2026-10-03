@@ -4,6 +4,9 @@ import { registerIpc, shutdown } from './ipc'
 
 let mainWindow: BrowserWindow | null = null
 
+/** Matches --bg-window, so resizing or reloading never flashes the other theme. */
+const windowBackground = () => (nativeTheme.shouldUseDarkColors ? '#1e1e20' : '#f5f5f4')
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -14,7 +17,7 @@ function createWindow() {
     title: 'Claude Nodes',
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 18, y: 18 },
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#1e1e20' : '#f5f5f4',
+    backgroundColor: windowBackground(),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -50,6 +53,9 @@ if (process.env.CLAUDE_NODES_USER_DATA) app.setPath('userData', process.env.CLAU
 app.whenReady().then(async () => {
   await registerIpc(() => mainWindow)
   createWindow()
+
+  // Fires for the Settings theme and for macOS appearance changes alike.
+  nativeTheme.on('updated', () => mainWindow?.setBackgroundColor(windowBackground()))
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

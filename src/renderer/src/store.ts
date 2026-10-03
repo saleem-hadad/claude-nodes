@@ -6,6 +6,7 @@ import type {
   Project,
   ProjectStats,
   Rect,
+  GitStatus,
   SessionCard,
   SessionStatus
 } from '@shared/types'
@@ -21,6 +22,10 @@ interface AppState {
   /** Board of the project in the current route, or null on the projects view. */
   board: BoardSnapshot | null
   boardLoading: boolean
+  /** Branch and changes of the open board's repository; null when it isn't one (or not loaded yet). */
+  git: GitStatus | null
+  /** The Changes (diff) modal is open. */
+  diffOpen: boolean
 
   /** Session whose terminal modal is open. */
   terminalSessionId: string | null
@@ -28,6 +33,8 @@ interface AppState {
   previewSessionId: string | null
   /** Session ids currently selected on the board. */
   selection: string[]
+  /** The Settings dialog is open. It survives navigation. */
+  settingsOpen: boolean
 
   navigate(route: Route): void
   refreshProjects(): Promise<void>
@@ -43,15 +50,24 @@ interface AppState {
   /** Deletes a section; its cards stay on the board, ungrouped. */
   removeSection(sectionId: string): void
   setStatus(sessionId: string, status: SessionStatus, live: boolean): void
+  /** Re-reads the open board's git status. */
+  refreshGit(): Promise<void>
+  openDiff(): void
+  closeDiff(): void
 
   openTerminal(sessionId: string): void
   closeTerminal(): void
   openPreview(sessionId: string): void
   closePreview(): void
   setSelection(ids: string[]): void
+  openSettings(): void
+  closeSettings(): void
 }
 
 const projectIdOf = (route: Route) => (route.view === 'board' ? route.projectId : null)
+
+/** The git status read in flight, if any. */
+let gitRead: { projectId: string; promise: Promise<void> } | null = null
 
 export const useApp = create<AppState>((set, get) => ({
   route: { view: 'projects' },
@@ -59,9 +75,12 @@ export const useApp = create<AppState>((set, get) => ({
   stats: {},
   board: null,
   boardLoading: false,
+  git: null,
+  diffOpen: false,
   terminalSessionId: null,
   previewSessionId: null,
   selection: [],
+  settingsOpen: false,
 
   navigate(route) {
     set({
@@ -69,7 +88,9 @@ export const useApp = create<AppState>((set, get) => ({
       board: null,
       selection: [],
       terminalSessionId: null,
-      previewSessionId: null
+      previewSessionId: null,
+      git: null,
+      diffOpen: false
     })
     if (route.view === 'board') get().loadBoard(route.projectId)
     else get().refreshProjects()
@@ -197,11 +218,35 @@ export const useApp = create<AppState>((set, get) => ({
     })
   },
 
+  refreshGit() {
+    const projectId = projectIdOf(get().route)
+    if (!projectId) return Promise.resolve()
+    // Focus, status and the poll timer often fire together: share one read.
+    if (gitRead?.projectId === projectId) return gitRead.promise
+    const promise = window.api.git
+      .status(projectId)
+      .catch(() => null)
+      .then((git) => {
+        if (projectIdOf(get().route) !== projectId) return
+        // Polled every few seconds: keep the old object when nothing changed, so nothing re-renders.
+        if (JSON.stringify(git) !== JSON.stringify(get().git)) set({ git })
+      })
+      .finally(() => {
+        if (gitRead?.promise === promise) gitRead = null
+      })
+    gitRead = { projectId, promise }
+    return promise
+  },
+
   openTerminal: (sessionId) => set({ terminalSessionId: sessionId, previewSessionId: null }),
   closeTerminal: () => set({ terminalSessionId: null }),
   openPreview: (sessionId) => set({ previewSessionId: sessionId, terminalSessionId: null }),
   closePreview: () => set({ previewSessionId: null }),
-  setSelection: (ids) => set({ selection: ids })
+  openDiff: () => set({ diffOpen: true }),
+  closeDiff: () => set({ diffOpen: false }),
+  setSelection: (ids) => set({ selection: ids }),
+  openSettings: () => set({ settingsOpen: true }),
+  closeSettings: () => set({ settingsOpen: false })
 }))
 
 /** The card for a session on the current board, if any. */

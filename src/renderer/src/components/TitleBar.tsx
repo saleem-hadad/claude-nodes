@@ -1,7 +1,8 @@
 import { useEffect } from 'react'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Settings } from 'lucide-react'
 import { useApp } from '@renderer/store'
 import { FolderIcon } from './FolderIcon'
+import { GitControls } from './git/GitControls'
 import { TITLEBAR_ACTIONS_ID } from './TitleBarActions'
 import { addProject } from './projects/projectsUi'
 import './TitleBar.css'
@@ -51,6 +52,7 @@ export function TitleBar() {
               <FolderIcon size={18} color={project?.color} />
               <span className="titlebar-current-name">{project?.name ?? ''}</span>
             </span>
+            <GitControls projectId={route.projectId} />
           </>
         ) : (
           <span className="titlebar-current">
@@ -59,7 +61,17 @@ export function TitleBar() {
         )}
       </nav>
 
-      <div id={TITLEBAR_ACTIONS_ID} className="titlebar-actions no-drag" />
+      <div className="titlebar-end">
+        <div id={TITLEBAR_ACTIONS_ID} className="titlebar-actions no-drag" />
+        <button
+          className="btn btn-ghost btn-icon titlebar-settings no-drag"
+          onClick={() => useApp.getState().openSettings()}
+          title="Settings (⌘,)"
+          aria-label="Settings"
+        >
+          <Settings size={16} strokeWidth={2} />
+        </button>
+      </div>
     </header>
   )
 }

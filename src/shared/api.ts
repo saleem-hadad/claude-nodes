@@ -3,10 +3,14 @@
 // exactly these channels.
 import type {
   AppInfo,
+  AppSettings,
   BoardSection,
   BoardSnapshot,
   CreateSessionOptions,
   FolderColor,
+  GitFileChange,
+  GitFileDiff,
+  GitStatus,
   NodePatch,
   OpenSessionResult,
   Project,
@@ -22,6 +26,9 @@ import type {
 
 export const IPC = {
   appInfo: 'app:info',
+
+  settingsGet: 'settings:get',
+  settingsUpdate: 'settings:update',
 
   projectsList: 'projects:list',
   projectsAdd: 'projects:add',
@@ -47,6 +54,9 @@ export const IPC = {
   sessionTranscript: 'session:transcript',
   sessionSummarize: 'session:summarize',
 
+  gitStatus: 'git:status',
+  gitDiff: 'git:diff',
+
   // main -> renderer events
   evPtyData: 'ev:pty-data',
   evPtyExit: 'ev:pty-exit',
@@ -63,8 +73,9 @@ export const IPC = {
  * - new-session:  Cmd+N — new Claude session on the open board
  * - new-terminal: Cmd+T — new shell in the project folder on the open board
  * - new-project:  Cmd+Shift+N — add a project folder
+ * - settings:     Cmd+, — open the Settings window
  */
-export type MenuCommand = 'close' | 'new-session' | 'new-terminal' | 'new-project'
+export type MenuCommand = 'close' | 'new-session' | 'new-terminal' | 'new-project' | 'settings'
 
 export type Unsubscribe = () => void
 
@@ -72,6 +83,12 @@ export interface Api {
   appInfo(): Promise<AppInfo>
   /** Absolute path of a File from a drag-and-drop event ('' if it has none). */
   pathForFile(file: File): string
+
+  settings: {
+    get(): Promise<AppSettings>
+    /** Saves and applies the changed settings; resolves with the full settings. */
+    update(patch: Partial<AppSettings>): Promise<AppSettings>
+  }
 
   projects: {
     list(): Promise<Project[]>
@@ -120,6 +137,13 @@ export interface Api {
     transcript(projectId: string, sessionId: string): Promise<TranscriptMessage[]>
     /** Asks a forked, non-persisted copy of each session to summarize itself. */
     summarize(projectId: string, sessionIds: string[], requestId: string): Promise<SummaryResult[]>
+  }
+
+  git: {
+    /** Branch and uncommitted changes of the project folder; null if it isn't a git repository. */
+    status(projectId: string): Promise<GitStatus | null>
+    /** Diff of one changed file (from status) against HEAD. */
+    diff(projectId: string, file: GitFileChange): Promise<GitFileDiff>
   }
 
   on: {

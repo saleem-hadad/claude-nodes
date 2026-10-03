@@ -49,6 +49,10 @@
   --status-done: #007aff;
   --status-waiting: #ff3b30;
 
+  /* Diffs (added / removed lines) */
+  --diff-add: #2da44e;
+  --diff-del: #cf222e;
+
   /* Archive zone */
   --archive-bg: rgba(120, 120, 128, 0.07);
   --archive-border: rgba(120, 120, 128, 0.35);
@@ -116,6 +120,9 @@
     --status-working: #ff9f0a;
     --status-done: #0a84ff;
     --status-waiting: #ff453a;
+
+    --diff-add: #3fb950;
+    --diff-del: #f85149;
 
     --archive-bg: rgba(160, 160, 170, 0.06);
     --archive-border: rgba(160, 160, 170, 0.3);

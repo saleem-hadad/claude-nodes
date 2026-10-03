@@ -1,15 +1,17 @@
 // IPC handlers implementing the contract in src/shared/api.ts.
-import { dialog, ipcMain, shell, type BrowserWindow } from 'electron'
+import { dialog, ipcMain, nativeTheme, shell, type BrowserWindow } from 'electron'
 import crypto from 'crypto'
 import fs from 'fs'
 import path from 'path'
 import { IPC } from '@shared/api'
 import type {
   AppInfo,
+  AppSettings,
   BoardNode,
   BoardSection,
   CreateSessionOptions,
   FolderColor,
+  GitFileChange,
   NodePatch,
   OpenSessionResult,
   Project,
@@ -31,11 +33,12 @@ import {
   watchProject
 } from './discovery'
 import { getClaudePath, getClaudeVersion, initEnv } from './env'
+import { gitDiff, gitStatus } from './git'
 import { configureStatus, forgetStatus, startHookServer, stopHookServer } from './hooks'
 import { installMenu } from './menu'
 import { nameSection, type NamingSource } from './naming'
 import * as ptys from './pty'
-import { flush, getBoard, getProject, getState, loadState, save } from './store'
+import { flush, getBoard, getProject, getState, loadState, normalizeSettings, save } from './store'
 import { summarizeSessions } from './summarize'
 
 const FOLDER_COLORS: FolderColor[] = ['blue', 'purple', 'pink', 'red', 'orange', 'yellow', 'green', 'graphite']
@@ -43,8 +46,19 @@ const FOLDER_COLORS: FolderColor[] = ['blue', 'purple', 'pink', 'red', 'orange',
 /** Bounds for an expanded card's size, in board units. */
 const clampSize = (n: number) => Math.round(Math.min(4000, Math.max(200, n)))
 
+/**
+ * Applies settings that live outside the renderer. The theme goes through
+ * nativeTheme so the renderer's prefers-color-scheme, native menus and dialogs
+ * all follow it.
+ */
+function applySettings(settings: AppSettings) {
+  nativeTheme.themeSource = settings.theme
+}
+
 export async function registerIpc(getWindow: () => BrowserWindow | null) {
   loadState()
+  // Before the window exists, so it opens in the chosen theme.
+  applySettings(getState().settings)
 
   // Capturing the login-shell env can take a few seconds; don't block the window on it.
   const envReady = initEnv().catch((err) => console.error('[env] init failed', err))
@@ -70,6 +84,16 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
   ipcMain.handle(IPC.appInfo, async (): Promise<AppInfo> => {
     await envReady
     return { claudePath: getClaudePath(), claudeVersion: getClaudeVersion(), platform: process.platform }
+  })
+
+  ipcMain.handle(IPC.settingsGet, (): AppSettings => getState().settings)
+
+  ipcMain.handle(IPC.settingsUpdate, (_e, patch: Partial<AppSettings>): AppSettings => {
+    const state = getState()
+    state.settings = normalizeSettings({ ...state.settings, ...patch })
+    applySettings(state.settings)
+    save()
+    return state.settings
   })
 
   // --- Projects ------------------------------------------------------------
@@ -251,6 +275,19 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
     save()
     await ptys.kill(sessionId)
     forgetStatus(sessionId)
+  })
+
+  // --- Git -----------------------------------------------------------------
+
+  // Both wait for the login-shell env so git resolves from the user's PATH.
+  ipcMain.handle(IPC.gitStatus, async (_e, projectId: string) => {
+    await envReady
+    return gitStatus(getProject(projectId).repoPath)
+  })
+
+  ipcMain.handle(IPC.gitDiff, async (_e, projectId: string, file: GitFileChange) => {
+    await envReady
+    return gitDiff(getProject(projectId).repoPath, file)
   })
 
   // --- Sessions ------------------------------------------------------------
