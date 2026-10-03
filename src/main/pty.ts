@@ -82,6 +82,7 @@ function commandFor(opts: SpawnOptions): { file: string; args: string[]; env: Re
 
   const args = opts.resume ? ['--resume', opts.sessionId] : ['--session-id', opts.sessionId]
   if (opts.name) args.push('--name', opts.name)
+  args.push('--permission-mode', 'acceptEdits')
   args.push('--settings', hookSettings())
   if (opts.initialPrompt) args.push(opts.initialPrompt)
   return { file: requireClaude(), args, env: spawnEnv(hookEnv(opts.sessionId)) }
