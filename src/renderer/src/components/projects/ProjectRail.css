@@ -1,0 +1,129 @@
+/* Invisible strip on the window's left edge that reveals the rail. */
+.rail-edge {
+  position: absolute;
+  z-index: 41;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 6px;
+}
+
+/* Floats over the board, vertically centred like the Dock on the left of the screen. */
+.rail {
+  position: absolute;
+  z-index: 40;
+  top: 0;
+  bottom: 0;
+  left: var(--rail-inset);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: var(--rail-w);
+  height: fit-content;
+  max-height: calc(100% - 2 * var(--rail-inset));
+  margin: auto 0;
+  padding: 6px 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--bg-elevated) 82%, transparent);
+  backdrop-filter: blur(24px) saturate(1.8);
+  box-shadow: var(--shadow-lg);
+  scrollbar-width: none;
+  opacity: 0;
+  transform: translateX(calc(-100% - var(--rail-inset)));
+  transition:
+    transform var(--dur-med) var(--ease-out),
+    opacity var(--dur-med) ease;
+}
+.rail.is-open {
+  opacity: 1;
+  transform: none;
+}
+.rail::-webkit-scrollbar {
+  display: none;
+}
+
+.rail-item {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  cursor: default;
+  transition: background var(--dur-fast) ease;
+}
+.rail-item:hover {
+  background: var(--bg-hover);
+}
+.rail-item:active {
+  background: var(--bg-pressed);
+}
+.rail-item.is-active {
+  background: var(--bg-selected);
+}
+
+/* Pill on the rail's edge marking the open project. */
+.rail-item.is-active::before {
+  content: '';
+  position: absolute;
+  left: -6px;
+  top: 50%;
+  width: 3px;
+  height: 18px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
+  transform: translateY(-50%);
+}
+
+.rail-item .status-dot.rail-dot {
+  position: absolute;
+  top: 4px;
+  right: 3px;
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid var(--bg-elevated);
+}
+
+.rail-hint {
+  position: fixed;
+  z-index: 60;
+  left: calc(var(--rail-inset) + var(--rail-w) + 6px);
+  display: flex;
+  flex-direction: column;
+  max-width: 260px;
+  padding: 5px 9px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-50%);
+  pointer-events: none;
+  animation: rail-hint-in var(--dur-fast) var(--ease-out);
+}
+
+.rail-hint-name {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.rail-hint-detail {
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+@keyframes rail-hint-in {
+  from {
+    opacity: 0;
+    transform: translate(-3px, -50%);
+  }
+}

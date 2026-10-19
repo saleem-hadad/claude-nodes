@@ -89,6 +89,8 @@
 
   /* Layout */
   --titlebar-h: 52px;
+  --rail-w: 52px;
+  --rail-inset: 8px;
   --card-w: 288px;
   --card-h: 216px; /* 4:3 */
 }

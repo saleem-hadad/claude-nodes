@@ -7,6 +7,7 @@ import { TerminalModal } from './terminal/TerminalModal'
 import { TranscriptPreview } from './terminal/TranscriptPreview'
 import { DiffModal } from './components/git/DiffModal'
 import { SettingsDialog } from './components/SettingsDialog'
+import { ProjectRail } from './components/projects/ProjectRail'
 
 export function App() {
   const route = useApp((s) => s.route)
@@ -18,14 +19,11 @@ export function App() {
       useApp.getState().setStatus(sessionId, status, live)
     })
 
-    // Folder badges show live counts, so refresh stats when statuses change.
+    // Folder badges (in the grid and the project rail) show live counts, so refresh stats when statuses change.
     let statsTimer: number | undefined
     const offStatsRefresh = window.api.on.status(() => {
       window.clearTimeout(statsTimer)
-      statsTimer = window.setTimeout(() => {
-        const { route } = useApp.getState()
-        if (route.view === 'projects') useApp.getState().refreshProjects()
-      }, 250)
+      statsTimer = window.setTimeout(() => useApp.getState().refreshProjects(), 250)
     })
 
     const offBoard = window.api.on.boardChanged((projectId) => {
@@ -68,7 +66,10 @@ export function App() {
         {route.view === 'projects' ? (
           <ProjectsView />
         ) : (
-          <BoardView key={route.projectId} projectId={route.projectId} />
+          <>
+            <BoardView key={route.projectId} projectId={route.projectId} />
+            <ProjectRail activeId={route.projectId} />
+          </>
         )}
       </main>
       <TerminalModal />
