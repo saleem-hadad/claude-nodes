@@ -43,6 +43,14 @@ import { summarizeSessions } from './summarize'
 
 const FOLDER_COLORS: FolderColor[] = ['blue', 'purple', 'pink', 'red', 'orange', 'yellow', 'green', 'graphite']
 
+/** A random folder colour, favouring the ones fewest projects use so neighbours tend to differ. */
+function pickFolderColor(projects: Project[]): FolderColor {
+  const uses = (color: FolderColor) => projects.filter((p) => p.color === color).length
+  const fewest = Math.min(...FOLDER_COLORS.map(uses))
+  const candidates = FOLDER_COLORS.filter((c) => uses(c) === fewest)
+  return candidates[Math.floor(Math.random() * candidates.length)]
+}
+
 /** Bounds for an expanded card's size, in board units. */
 const clampSize = (n: number) => Math.round(Math.min(4000, Math.max(200, n)))
 
@@ -131,7 +139,7 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
       id: crypto.randomUUID(),
       name: path.basename(real),
       repoPath: real,
-      color: 'blue',
+      color: pickFolderColor(state.projects),
       createdAt: Date.now()
     }
     state.projects.push(project)
