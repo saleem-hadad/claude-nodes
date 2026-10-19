@@ -4,16 +4,23 @@ import type { Project, ProjectStats } from '@shared/types'
 import { FolderIcon } from '../FolderIcon'
 import { projectGlyph } from './projectsUi'
 
+/** Drag data type for a project folder dragged between sections of the grid. */
+export const PROJECT_DRAG_TYPE = 'application/x-claude-nodes-project'
+
 interface Props {
   project: Project
   stats?: ProjectStats
   selected: boolean
   renaming: boolean
   isNew: boolean
+  /** The folder can be dragged onto another section, to change its group. */
+  draggable?: boolean
   onSelect: () => void
   onOpen: () => void
   onContextMenu: (e: MouseEvent) => void
   onRename: (name: string | null) => void
+  onDragStart?: () => void
+  onDragEnd?: () => void
 }
 
 function subtitle(stats?: ProjectStats): string {
@@ -31,18 +38,33 @@ export function FolderItem({
   selected,
   renaming,
   isNew,
+  draggable = false,
   onSelect,
   onOpen,
   onContextMenu,
-  onRename
+  onRename,
+  onDragStart,
+  onDragEnd
 }: Props) {
   return (
     <div
-      className={clsx('pv-item', selected && 'is-selected', isNew && 'is-new')}
+      className={clsx(
+        'pv-item',
+        selected && 'is-selected',
+        isNew && 'is-new',
+        project.archived && 'is-archived'
+      )}
       role="option"
       aria-selected={selected}
       data-project-id={project.id}
       title={project.repoPath}
+      draggable={draggable && !renaming}
+      onDragStart={(e) => {
+        e.dataTransfer.setData(PROJECT_DRAG_TYPE, project.id)
+        e.dataTransfer.effectAllowed = 'move'
+        onDragStart?.()
+      }}
+      onDragEnd={onDragEnd}
       onPointerDown={(e) => {
         if (e.button === 0) onSelect()
       }}
@@ -85,12 +107,17 @@ export function FolderItem({
   )
 }
 
-function RenameField({
+/** Inline name editor: Enter or blur commits, Escape cancels. Reports null when nothing changed. */
+export function RenameField({
   initial,
-  onDone
+  onDone,
+  className = 'pv-rename',
+  label = 'Project name'
 }: {
   initial: string
   onDone: (name: string | null) => void
+  className?: string
+  label?: string
 }) {
   const [value, setValue] = useState(initial)
   const ref = useRef<HTMLInputElement>(null)
@@ -111,10 +138,10 @@ function RenameField({
   return (
     <input
       ref={ref}
-      className="pv-rename"
+      className={className}
       value={value}
       spellCheck={false}
-      aria-label="Project name"
+      aria-label={label}
       onChange={(e) => setValue(e.target.value)}
       onPointerDown={(e) => e.stopPropagation()}
       onDoubleClick={(e) => e.stopPropagation()}

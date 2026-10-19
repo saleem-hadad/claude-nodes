@@ -1,30 +1,52 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
-import { FolderOpen, FolderPlus, Pencil, Plus, Search, Trash2 } from 'lucide-react'
-import type { FolderColor, Project } from '@shared/types'
+import clsx from 'clsx'
+import {
+  Archive,
+  ArchiveRestore,
+  ChevronDown,
+  FolderInput,
+  FolderOpen,
+  FolderPlus,
+  Pencil,
+  Plus,
+  Search,
+  Trash2
+} from 'lucide-react'
+import type { FolderColor, Project, ProjectGroup } from '@shared/types'
 import { useApp } from '@renderer/store'
 import { ContextMenu, type MenuItem } from '@renderer/components/ContextMenu'
 import { Modal } from '@renderer/components/Modal'
 import { TitleBarActions } from '@renderer/components/TitleBarActions'
 import { FolderIcon } from '@renderer/components/FolderIcon'
 import { ColorSwatches } from '@renderer/components/ColorSwatches'
-import { FolderItem } from '@renderer/components/projects/FolderItem'
+import { FolderItem, RenameField } from '@renderer/components/projects/FolderItem'
+import { GroupPicker } from '@renderer/components/projects/GroupPicker'
 import {
   addProject,
+  groupProjects,
+  moveToGroup,
   sortProjects,
+  updateGroup,
   useProjectsUi
 } from '@renderer/components/projects/projectsUi'
 import './ProjectsView.css'
 
+/** A context menu for a project folder or for a group's header. */
 interface MenuState {
   x: number
   y: number
-  projectId: string
+  projectId?: string
+  groupId?: string
 }
+
+/** Drop-target key of the ungrouped section; group sections use their group id. */
+const UNGROUPED = 'ungrouped'
 
 const openProject = (id: string) => useApp.getState().navigate({ view: 'board', projectId: id })
 
 export function ProjectsView() {
   const projects = useApp((s) => s.projects)
+  const groups = useApp((s) => s.groups)
   const stats = useApp((s) => s.stats)
   const selectedId = useProjectsUi((s) => s.selectedId)
   const select = useProjectsUi((s) => s.select)
@@ -34,14 +56,31 @@ export function ProjectsView() {
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [menu, setMenu] = useState<MenuState | null>(null)
   const [removeTarget, setRemoveTarget] = useState<Project | null>(null)
+  const [moveTarget, setMoveTarget] = useState<Project | null>(null)
+  const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
+  // A folder being dragged onto another section, and the section under the pointer.
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [dropKey, setDropKey] = useState<string | null>(null)
   const [newIds, setNewIds] = useState<Set<string>>(new Set())
 
-  const gridRef = useRef<HTMLDivElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
   const dragDepth = useRef(0)
   const seenIds = useRef<Set<string> | null>(null)
 
   const sorted = useMemo(() => sortProjects(projects), [projects])
+  const active = useMemo(() => sorted.filter((p) => !p.archived), [sorted])
+  const archived = useMemo(() => sorted.filter((p) => p.archived), [sorted])
+  const { ungrouped, byGroup } = useMemo(() => groupProjects(active, groups), [active, groups])
+  // Reading order across all the grids, for keyboard navigation.
+  const ordered = useMemo(
+    () => [
+      ...ungrouped,
+      ...byGroup.flatMap(({ group, projects }) => (group.collapsed ? [] : projects)),
+      ...archived
+    ],
+    [ungrouped, byGroup, archived]
+  )
 
   useEffect(() => {
     useApp
@@ -80,7 +119,7 @@ export function ProjectsView() {
   // Keep the selected folder visible.
   useEffect(() => {
     if (!selectedId) return
-    gridRef.current
+    scrollRef.current
       ?.querySelector(`[data-project-id="${CSS.escape(selectedId)}"]`)
       ?.scrollIntoView({ block: 'nearest' })
   }, [selectedId])
@@ -97,6 +136,21 @@ export function ProjectsView() {
     await useApp.getState().refreshProjects()
   }, [])
 
+  const setArchived = useCallback(async (id: string, archived: boolean) => {
+    await window.api.projects.update(id, { archived })
+    await useApp.getState().refreshProjects()
+  }, [])
+
+  const commitGroupRename = useCallback((id: string, name: string | null) => {
+    setRenamingGroupId(null)
+    if (name) updateGroup(id, { name })
+  }, [])
+
+  const deleteGroup = useCallback(async (id: string) => {
+    await window.api.groups.remove(id)
+    await useApp.getState().refreshProjects()
+  }, [])
+
   const confirmRemove = useCallback(async () => {
     const target = removeTarget
     setRemoveTarget(null)
@@ -109,13 +163,13 @@ export function ProjectsView() {
   // Finder keyboard semantics.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (menu || removeTarget || renamingId) return
+      if (menu || removeTarget || moveTarget || renamingId || renamingGroupId) return
       const target = e.target as HTMLElement | null
       if (target?.closest('input, textarea, [contenteditable="true"]')) return
 
       const current = useProjectsUi.getState().selectedId
-      const index = sorted.findIndex((p) => p.id === current)
-      const project = index >= 0 ? sorted[index] : undefined
+      const index = ordered.findIndex((p) => p.id === current)
+      const project = index >= 0 ? ordered[index] : undefined
 
       if (e.metaKey && (e.key === 'o' || e.key === 'ArrowDown')) {
         if (project) {
@@ -138,21 +192,24 @@ export function ProjectsView() {
         setRenamingId(project.id)
       } else if (e.key === 'Escape') {
         select(null)
-      } else if (e.key.startsWith('Arrow') && sorted.length > 0) {
+      } else if (e.key.startsWith('Arrow') && ordered.length > 0) {
         e.preventDefault()
         if (index < 0) {
-          select(sorted[0].id)
+          select(ordered[0].id)
           return
         }
-        const cols = gridColumns(gridRef.current)
-        const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -cols, ArrowDown: cols }[e.key] ?? 0
-        const next = index + step
-        if (next >= 0 && next < sorted.length) select(sorted[next].id)
+        let next: string | undefined
+        if (e.key === 'ArrowLeft') next = ordered[index - 1]?.id
+        else if (e.key === 'ArrowRight') next = ordered[index + 1]?.id
+        else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+          next = folderInNextRow(scrollRef.current, ordered[index].id, e.key === 'ArrowDown' ? 1 : -1)
+        }
+        if (next) select(next)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [sorted, menu, removeTarget, renamingId, select])
+  }, [ordered, menu, removeTarget, moveTarget, renamingId, renamingGroupId, select])
 
   // Dropping folders from Finder adds them as projects.
   const hasFiles = (e: DragEvent) => e.dataTransfer.types.includes('Files')
@@ -183,8 +240,50 @@ export function ProjectsView() {
     for (const path of paths) await addProject(path)
   }
 
-  const menuProject = menu ? projects.find((p) => p.id === menu.projectId) : undefined
-  const menuItems: MenuItem[] = menuProject
+  // Dragging a folder onto another section moves it to that group.
+  const dragProject = dragId ? projects.find((p) => p.id === dragId) : undefined
+  const sectionOf = (project: Project) =>
+    byGroup.some(({ group }) => group.id === project.groupId) ? project.groupId! : UNGROUPED
+  const dragFrom = dragProject ? sectionOf(dragProject) : null
+  const isDropTarget = (key: string) => dropKey === key && dragFrom !== null && dragFrom !== key
+  const endDrag = () => {
+    setDragId(null)
+    setDropKey(null)
+  }
+  const dropProps = (key: string) => ({
+    onDragOver: (e: DragEvent) => {
+      if (!dragId) return
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'move'
+      setDropKey(key)
+    },
+    onDragLeave: (e: DragEvent) => {
+      if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
+      setDropKey((current) => (current === key ? null : current))
+    },
+    onDrop: (e: DragEvent) => {
+      if (!dragId) return
+      e.preventDefault()
+      endDrag()
+      if (dragFrom !== key) moveToGroup(dragId, key === UNGROUPED ? null : key)
+    }
+  })
+
+  const menuProject = menu?.projectId ? projects.find((p) => p.id === menu.projectId) : undefined
+  const menuGroup = menu?.groupId ? groups.find((g) => g.id === menu.groupId) : undefined
+  const groupMenu = (group: ProjectGroup): MenuItem[] => [
+    { label: 'Rename Group', icon: <Pencil />, onSelect: () => setRenamingGroupId(group.id) },
+    'separator',
+    {
+      label: 'Delete Group',
+      icon: <Trash2 />,
+      danger: true,
+      onSelect: () => deleteGroup(group.id)
+    }
+  ]
+  const menuItems: MenuItem[] = menuGroup
+    ? groupMenu(menuGroup)
+    : menuProject
     ? [
         {
           label: 'Open',
@@ -212,12 +311,26 @@ export function ProjectsView() {
           )
         },
         'separator',
+        ...(menuProject.archived
+          ? []
+          : [
+              {
+                label: 'Move to Group…',
+                icon: <FolderInput />,
+                onSelect: () => setMoveTarget(menuProject)
+              }
+            ]),
         {
           label: 'Reveal in Finder',
           icon: <Search />,
           onSelect: () => window.api.projects.revealInFinder(menuProject.id)
         },
         'separator',
+        {
+          label: menuProject.archived ? 'Unarchive' : 'Archive',
+          icon: menuProject.archived ? <ArchiveRestore /> : <Archive />,
+          onSelect: () => setArchived(menuProject.id, !menuProject.archived)
+        },
         {
           label: 'Remove from Claude Nodes…',
           icon: <Trash2 />,
@@ -226,6 +339,24 @@ export function ProjectsView() {
         }
       ]
     : []
+
+  const renderFolder = (project: Project) => (
+    <FolderItem
+      key={project.id}
+      project={project}
+      stats={stats[project.id]}
+      selected={selectedId === project.id}
+      renaming={renamingId === project.id}
+      isNew={newIds.has(project.id)}
+      draggable={!project.archived}
+      onSelect={() => select(project.id)}
+      onOpen={() => openProject(project.id)}
+      onContextMenu={(e) => setMenu({ x: e.clientX, y: e.clientY, projectId: project.id })}
+      onRename={(name) => commitRename(project.id, name)}
+      onDragStart={() => setDragId(project.id)}
+      onDragEnd={endDrag}
+    />
+  )
 
   return (
     <div
@@ -246,31 +377,86 @@ export function ProjectsView() {
 
       {sorted.length > 0 && (
         <div
+          ref={scrollRef}
           className="pv-scroll"
           onPointerDown={(e) => {
             if (!(e.target as HTMLElement).closest('.pv-item')) select(null)
           }}
         >
-          <header className="pv-header">
-            <h1>Projects</h1>
-            <span className="pv-count">{sorted.length}</span>
-          </header>
-          <div ref={gridRef} className="pv-grid" role="listbox" aria-label="Projects">
-            {sorted.map((project) => (
-              <FolderItem
-                key={project.id}
-                project={project}
-                stats={stats[project.id]}
-                selected={selectedId === project.id}
-                renaming={renamingId === project.id}
-                isNew={newIds.has(project.id)}
-                onSelect={() => select(project.id)}
-                onOpen={() => openProject(project.id)}
-                onContextMenu={(e) => setMenu({ x: e.clientX, y: e.clientY, projectId: project.id })}
-                onRename={(name) => commitRename(project.id, name)}
-              />
-            ))}
-          </div>
+          <section
+            className={clsx('pv-section', isDropTarget(UNGROUPED) && 'is-drop')}
+            {...dropProps(UNGROUPED)}
+          >
+            <header className="pv-header">
+              <h1>Projects</h1>
+              <span className="pv-count">{active.length}</span>
+            </header>
+            {ungrouped.length > 0 ? (
+              <div className="pv-grid" role="listbox" aria-label="Projects">
+                {ungrouped.map(renderFolder)}
+              </div>
+            ) : dragFrom && dragFrom !== UNGROUPED ? (
+              <div className="pv-group-empty">Drop here to take it out of its group</div>
+            ) : active.length === 0 ? (
+              <p className="pv-none">All projects are archived.</p>
+            ) : null}
+          </section>
+
+          {byGroup.map(({ group, projects: members }) => (
+            <section
+              key={group.id}
+              className={clsx('pv-section', 'pv-group', isDropTarget(group.id) && 'is-drop')}
+              {...dropProps(group.id)}
+            >
+              <header
+                className="pv-header pv-group-header"
+                onContextMenu={(e) => {
+                  e.preventDefault()
+                  setMenu({ x: e.clientX, y: e.clientY, groupId: group.id })
+                }}
+              >
+                {renamingGroupId === group.id ? (
+                  <RenameField
+                    className="pv-group-rename"
+                    label="Group name"
+                    initial={group.name}
+                    onDone={(name) => commitGroupRename(group.id, name)}
+                  />
+                ) : (
+                  <button
+                    className="pv-group-toggle"
+                    aria-expanded={!group.collapsed}
+                    title={group.collapsed ? 'Show projects' : 'Hide projects'}
+                    onClick={() => updateGroup(group.id, { collapsed: !group.collapsed })}
+                  >
+                    <ChevronDown size={16} strokeWidth={2.2} className="pv-group-chevron" />
+                    <span className="pv-group-name">{group.name}</span>
+                  </button>
+                )}
+                <span className="pv-count">{members.length}</span>
+              </header>
+              {!group.collapsed &&
+                (members.length > 0 ? (
+                  <div className="pv-grid" role="listbox" aria-label={group.name}>
+                    {members.map(renderFolder)}
+                  </div>
+                ) : (
+                  <div className="pv-group-empty">Drag projects here</div>
+                ))}
+            </section>
+          ))}
+
+          {archived.length > 0 && (
+            <>
+              <header className="pv-header pv-header-archived">
+                <h2>Archived</h2>
+                <span className="pv-count">{archived.length}</span>
+              </header>
+              <div className="pv-grid" role="listbox" aria-label="Archived projects">
+                {archived.map(renderFolder)}
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -289,9 +475,11 @@ export function ProjectsView() {
         </div>
       )}
 
-      {menu && menuProject && (
+      {menu && menuItems.length > 0 && (
         <ContextMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />
       )}
+
+      <GroupPicker project={moveTarget} groups={groups} onClose={() => setMoveTarget(null)} />
 
       <Modal
         open={!!removeTarget}
@@ -341,12 +529,18 @@ function EmptyState() {
   )
 }
 
-
-/** Number of items in the first row of the grid. */
-function gridColumns(grid: HTMLElement | null): number {
-  const items = grid ? Array.from(grid.children) as HTMLElement[] : []
-  if (items.length === 0) return 1
-  const top = items[0].offsetTop
-  const cols = items.filter((el) => el.offsetTop === top).length
-  return Math.max(1, cols)
+/** The folder in the next row up (-1) or down (1) that lines up best with `fromId`, across all grids. */
+function folderInNextRow(root: HTMLElement | null, fromId: string, dir: 1 | -1): string | undefined {
+  const items = Array.from(root?.querySelectorAll<HTMLElement>('[data-project-id]') ?? []).map(
+    (el) => ({ id: el.dataset.projectId!, rect: el.getBoundingClientRect() })
+  )
+  const from = items.find((item) => item.id === fromId)
+  if (!from) return undefined
+  const beyond = items.filter((item) => (item.rect.top - from.rect.top) * dir > 1)
+  if (beyond.length === 0) return undefined
+  const tops = beyond.map((item) => item.rect.top)
+  const rowTop = dir > 0 ? Math.min(...tops) : Math.max(...tops)
+  const row = beyond.filter((item) => Math.abs(item.rect.top - rowTop) < 1)
+  const offset = (item: (typeof row)[number]) => Math.abs(item.rect.left - from.rect.left)
+  return row.reduce((best, item) => (offset(item) < offset(best) ? item : best)).id
 }

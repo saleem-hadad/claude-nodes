@@ -19,6 +19,19 @@ export interface Project {
   createdAt: number
   /** Last time the project board was opened; used for "recent" ordering. */
   openedAt?: number
+  /** Archived projects are listed apart on the projects grid and left out of the board's project rail. */
+  archived?: boolean
+  /** The group the project is filed under; ungrouped when unset. */
+  groupId?: string
+}
+
+/** A named set of projects (e.g. infra repos), shown as its own section on the projects grid. */
+export interface ProjectGroup {
+  id: string
+  name: string
+  createdAt: number
+  /** Folded away on the projects grid. */
+  collapsed?: boolean
 }
 
 export interface ProjectStats {

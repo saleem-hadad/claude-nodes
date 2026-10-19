@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type PointerEvent } from 'react'
 import clsx from 'clsx'
+import { Plus } from 'lucide-react'
 import type { ProjectStats } from '@shared/types'
 import { useApp } from '@renderer/store'
 import { FolderIcon } from '../FolderIcon'
-import { projectGlyph } from './projectsUi'
+import { addProject, groupProjects, projectGlyph } from './projectsUi'
 import './ProjectRail.css'
 
 interface Hint {
-  projectId: string
+  /** The hovered project, or null for the New Project button. */
+  projectId: string | null
   top: number
 }
 
@@ -30,16 +32,31 @@ function activity(stats?: ProjectStats): string | undefined {
  */
 export function ProjectRail({ activeId }: { activeId: string }) {
   const projects = useApp((s) => s.projects)
+  const groups = useApp((s) => s.groups)
   const stats = useApp((s) => s.stats)
   const [open, setOpen] = useState(false)
   const [hint, setHint] = useState<Hint | null>(null)
   const timer = useRef<number | undefined>(undefined)
-  const hinted = hint && projects.find((p) => p.id === hint.projectId)
-  const hintDetail = hint && activity(stats[hint.projectId])
+  const hinted = hint?.projectId ? projects.find((p) => p.id === hint.projectId) : undefined
+  const hintName = hint && (hint.projectId ? hinted?.name : 'New Project')
+  const hintGroup = hinted?.groupId ? groups.find((g) => g.id === hinted.groupId)?.name : undefined
+  const hintDetail =
+    hint &&
+    (hint.projectId
+      ? [hintGroup, activity(stats[hint.projectId])].filter(Boolean).join(' · ')
+      : '⇧⌘N')
+  const showHint = (projectId: string | null) => (e: PointerEvent<HTMLElement>) => {
+    const r = e.currentTarget.getBoundingClientRect()
+    setHint({ projectId, top: r.top + r.height / 2 })
+  }
 
-  // Opening a board bumps its openedAt, so keep the order the projects were added in:
-  // icons must not jump around while switching between them.
-  const sorted = useMemo(() => [...projects].sort((a, b) => a.createdAt - b.createdAt), [projects])
+  // Ungrouped projects first, then one block per group. Opening a board bumps its openedAt, so
+  // keep the order the projects were added in: icons must not jump around while switching.
+  const blocks = useMemo(() => {
+    const active = projects.filter((p) => !p.archived).sort((a, b) => a.createdAt - b.createdAt)
+    const { ungrouped, byGroup } = groupProjects(active, groups)
+    return [ungrouped, ...byGroup.map((b) => b.projects)].filter((block) => block.length > 0)
+  }, [projects, groups])
 
   // The badges need fresh stats; the projects view isn't there to load them.
   useEffect(() => {
@@ -87,36 +104,49 @@ export function ProjectRail({ activeId }: { activeId: string }) {
         onPointerLeave={hide}
         onScroll={() => setHint(null)}
       >
-        {sorted.map((project) => {
-          const active = project.id === activeId
-          const s = stats[project.id]
-          const status = s?.waiting ? 'waiting' : s?.working ? 'working' : undefined
-          return (
-            <button
-              key={project.id}
-              className={clsx('rail-item', active && 'is-active')}
-              aria-label={project.name}
-              aria-current={active ? 'page' : undefined}
-              onClick={() => {
-                if (!active) useApp.getState().navigate({ view: 'board', projectId: project.id })
-              }}
-              onPointerEnter={(e) => {
-                const r = e.currentTarget.getBoundingClientRect()
-                setHint({ projectId: project.id, top: r.top + r.height / 2 })
-              }}
-              onPointerLeave={() => setHint(null)}
-            >
-              <FolderIcon size={34} color={project.color} glyph={projectGlyph(project.name)} />
-              {status && <span className="status-dot rail-dot" data-status={status} />}
-            </button>
-          )
-        })}
+        {blocks.map((block) => (
+          <Fragment key={block[0].id}>
+            {block.map((project) => {
+              const active = project.id === activeId
+              const s = stats[project.id]
+              const status = s?.waiting ? 'waiting' : s?.working ? 'working' : undefined
+              return (
+                <button
+                  key={project.id}
+                  className={clsx('rail-item', active && 'is-active')}
+                  aria-label={project.name}
+                  aria-current={active ? 'page' : undefined}
+                  onClick={() => {
+                    if (!active) useApp.getState().navigate({ view: 'board', projectId: project.id })
+                  }}
+                  onPointerEnter={showHint(project.id)}
+                  onPointerLeave={() => setHint(null)}
+                >
+                  <FolderIcon size={34} color={project.color} glyph={projectGlyph(project.name)} />
+                  {status && <span className="status-dot rail-dot" data-status={status} />}
+                </button>
+              )
+            })}
+            {/* Divides the groups, and the last one from the New Project button. */}
+            <div className="rail-sep" aria-hidden="true" />
+          </Fragment>
+        ))}
+
+        <button
+          className="rail-item rail-add"
+          aria-label="New Project"
+          onClick={() => addProject(undefined, { open: true })}
+          onPointerEnter={showHint(null)}
+          onPointerLeave={() => setHint(null)}
+        >
+          <Plus size={18} strokeWidth={2} />
+        </button>
       </nav>
 
       {/* Outside the rail: its transform and backdrop blur would trap a fixed tooltip. */}
-      {open && hint && hinted && (
+      {open && hint && hintName && (
         <div className="rail-hint" style={{ top: hint.top }} role="tooltip">
-          <span className="rail-hint-name">{hinted.name}</span>
+          <span className="rail-hint-name">{hintName}</span>
           {hintDetail && <span className="rail-hint-detail">{hintDetail}</span>}
         </div>
       )}

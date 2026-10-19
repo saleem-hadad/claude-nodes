@@ -15,6 +15,7 @@ import type {
   NodePatch,
   OpenSessionResult,
   Project,
+  ProjectGroup,
   ProjectStats,
   Rect,
   SessionCard,
@@ -38,7 +39,16 @@ import { configureStatus, forgetStatus, startHookServer, stopHookServer } from '
 import { installMenu } from './menu'
 import { nameSection, type NamingSource } from './naming'
 import * as ptys from './pty'
-import { flush, getBoard, getProject, getState, loadState, normalizeSettings, save } from './store'
+import {
+  flush,
+  getBoard,
+  getGroup,
+  getProject,
+  getState,
+  loadState,
+  normalizeSettings,
+  save
+} from './store'
 import { summarizeSessions } from './summarize'
 
 const FOLDER_COLORS: FolderColor[] = ['blue', 'purple', 'pink', 'red', 'orange', 'yellow', 'green', 'graphite']
@@ -133,7 +143,14 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
 
     const state = getState()
     const existing = state.projects.find((p) => realRepoPath(p.repoPath) === real)
-    if (existing) return existing
+    if (existing) {
+      // Adding an archived project's folder again brings it back.
+      if (existing.archived) {
+        delete existing.archived
+        save()
+      }
+      return existing
+    }
 
     const project: Project = {
       id: crypto.randomUUID(),
@@ -149,11 +166,19 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
 
   ipcMain.handle(
     IPC.projectsUpdate,
-    (_e, id: string, patch: { name?: string; color?: FolderColor }): Project => {
+    (
+      _e,
+      id: string,
+      patch: { name?: string; color?: FolderColor; archived?: boolean; groupId?: string | null }
+    ): Project => {
       const project = getProject(id)
       const name = patch.name?.trim()
       if (name) project.name = name
       if (patch.color && FOLDER_COLORS.includes(patch.color)) project.color = patch.color
+      if (patch.archived === true) project.archived = true
+      else if (patch.archived === false) delete project.archived
+      if (patch.groupId === null) delete project.groupId
+      else if (patch.groupId) project.groupId = getGroup(patch.groupId).id
       save()
       return project
     }
@@ -176,6 +201,41 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
     const out: Record<string, ProjectStats> = {}
     for (const project of getState().projects) out[project.id] = projectStats(project)
     return out
+  })
+
+  // --- Groups --------------------------------------------------------------
+
+  ipcMain.handle(IPC.groupsList, (): ProjectGroup[] => getState().groups)
+
+  ipcMain.handle(IPC.groupsCreate, (_e, name: string): ProjectGroup => {
+    const group: ProjectGroup = {
+      id: crypto.randomUUID(),
+      name: name.trim() || 'New Group',
+      createdAt: Date.now()
+    }
+    getState().groups.push(group)
+    save()
+    return group
+  })
+
+  ipcMain.handle(
+    IPC.groupsUpdate,
+    (_e, id: string, patch: { name?: string; collapsed?: boolean }): ProjectGroup => {
+      const group = getGroup(id)
+      const name = patch.name?.trim()
+      if (name) group.name = name
+      if (patch.collapsed === true) group.collapsed = true
+      else if (patch.collapsed === false) delete group.collapsed
+      save()
+      return group
+    }
+  )
+
+  ipcMain.handle(IPC.groupsRemove, (_e, id: string) => {
+    const state = getState()
+    state.groups = state.groups.filter((g) => g.id !== id)
+    for (const project of state.projects) if (project.groupId === id) delete project.groupId
+    save()
   })
 
   // --- Board ---------------------------------------------------------------

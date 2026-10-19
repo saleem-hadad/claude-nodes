@@ -2,7 +2,15 @@
 import { app } from 'electron'
 import fs from 'fs'
 import path from 'path'
-import type { AppSettings, BoardNode, BoardSection, Project, Rect, Viewport } from '@shared/types'
+import type {
+  AppSettings,
+  BoardNode,
+  BoardSection,
+  Project,
+  ProjectGroup,
+  Rect,
+  Viewport
+} from '@shared/types'
 
 /** Six 288px card columns with 24px gaps and 40px side padding. */
 const DEFAULT_ARCHIVE_W = 2 * 40 + 6 * 288 + 5 * 24
@@ -28,11 +36,12 @@ export interface BoardState {
 
 export interface State {
   projects: Project[]
+  groups: ProjectGroup[]
   boards: Record<string, BoardState>
   settings: AppSettings
 }
 
-let state: State = { projects: [], boards: {}, settings: normalizeSettings(null) }
+let state: State = { projects: [], groups: [], boards: {}, settings: normalizeSettings(null) }
 let saveTimer: NodeJS.Timeout | null = null
 
 function statePath() {
@@ -44,11 +53,12 @@ export function loadState() {
     const raw = JSON.parse(fs.readFileSync(statePath(), 'utf8')) as Partial<State>
     state = {
       projects: Array.isArray(raw.projects) ? raw.projects : [],
+      groups: Array.isArray(raw.groups) ? raw.groups : [],
       boards: raw.boards && typeof raw.boards === 'object' ? raw.boards : {},
       settings: normalizeSettings(raw.settings)
     }
   } catch {
-    state = { projects: [], boards: {}, settings: normalizeSettings(null) }
+    state = { projects: [], groups: [], boards: {}, settings: normalizeSettings(null) }
   }
 }
 
@@ -93,6 +103,12 @@ export function getProject(id: string): Project {
   const project = state.projects.find((p) => p.id === id)
   if (!project) throw new Error(`Unknown project ${id}`)
   return project
+}
+
+export function getGroup(id: string): ProjectGroup {
+  const group = state.groups.find((g) => g.id === id)
+  if (!group) throw new Error(`Unknown group ${id}`)
+  return group
 }
 
 export function getBoard(projectId: string): BoardState {

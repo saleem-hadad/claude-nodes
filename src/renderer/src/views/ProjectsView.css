@@ -33,6 +33,119 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Sections: ungrouped projects on top, then one per group. Each takes folders dragged onto it. */
+.pv-section {
+  margin: 0 -10px;
+  padding: 0 10px 6px;
+  border-radius: var(--radius-lg);
+  transition:
+    background var(--dur-fast) ease,
+    box-shadow var(--dur-fast) ease;
+}
+.pv-section.is-drop {
+  background: var(--archive-drop);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.pv-group {
+  margin-top: 20px;
+}
+.pv-group-header {
+  margin-bottom: 14px;
+  padding-top: 8px;
+}
+.pv-group-header .pv-count {
+  font-size: var(--text-md);
+}
+
+.pv-group-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  margin-left: -6px;
+  padding: 2px 8px 2px 3px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: default;
+}
+.pv-group-toggle:hover {
+  background: var(--bg-hover);
+}
+.pv-group-toggle:active {
+  background: var(--bg-pressed);
+}
+.pv-group-chevron {
+  flex: none;
+  color: var(--text-tertiary);
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.pv-group-toggle[aria-expanded='false'] .pv-group-chevron {
+  transform: rotate(-90deg);
+}
+.pv-group-name {
+  overflow: hidden;
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.pv-group-rename {
+  width: 260px;
+  margin-left: -4px;
+  padding: 1px 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  box-shadow:
+    0 0 0 1px var(--accent),
+    0 0 0 4px var(--focus-ring);
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  outline: none;
+}
+
+.pv-group-empty {
+  display: grid;
+  place-items: center;
+  height: 72px;
+  margin: 0 6px 4px;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+}
+
+/* Archived section, below the active grid */
+.pv-header-archived {
+  margin-top: 36px;
+  margin-bottom: 16px;
+  padding-top: 18px;
+  border-top: 0.5px solid var(--separator);
+}
+.pv-header-archived h2 {
+  margin: 0;
+  color: var(--text-secondary);
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+.pv-header-archived .pv-count {
+  font-size: var(--text-md);
+}
+
+.pv-none {
+  margin: 0 0 0 6px;
+  color: var(--text-tertiary);
+  font-size: var(--text-md);
+}
+
 /* Grid */
 .pv-grid {
   display: grid;
@@ -82,6 +195,22 @@
     opacity: 0;
     transform: scale(0.6);
   }
+}
+
+/* Archived folders are faded; live badges stay at full strength. */
+.pv-item.is-archived .pv-icon > svg {
+  opacity: 0.42;
+  filter: saturate(0.4);
+  transition:
+    transform var(--dur-med) var(--ease-out),
+    opacity var(--dur-fast) ease;
+}
+.pv-item.is-archived:hover .pv-icon > svg,
+.pv-item.is-archived.is-selected .pv-icon > svg {
+  opacity: 0.7;
+}
+.pv-item.is-archived:not(.is-selected) .pv-label span {
+  color: var(--text-secondary);
 }
 
 /* Live session badges */

@@ -4,6 +4,7 @@ import type {
   BoardSnapshot,
   NodePatch,
   Project,
+  ProjectGroup,
   ProjectStats,
   Rect,
   GitStatus,
@@ -17,6 +18,7 @@ export type Route = { view: 'projects' } | { view: 'board'; projectId: string }
 interface AppState {
   route: Route
   projects: Project[]
+  groups: ProjectGroup[]
   stats: Record<string, ProjectStats>
 
   /** Board of the project in the current route, or null on the projects view. */
@@ -72,6 +74,7 @@ let gitRead: { projectId: string; promise: Promise<void> } | null = null
 export const useApp = create<AppState>((set, get) => ({
   route: { view: 'projects' },
   projects: [],
+  groups: [],
   stats: {},
   board: null,
   boardLoading: false,
@@ -97,11 +100,12 @@ export const useApp = create<AppState>((set, get) => ({
   },
 
   async refreshProjects() {
-    const [projects, stats] = await Promise.all([
+    const [projects, groups, stats] = await Promise.all([
       window.api.projects.list(),
+      window.api.groups.list(),
       window.api.projects.stats()
     ])
-    set({ projects, stats })
+    set({ projects, groups, stats })
   },
 
   async loadBoard(projectId) {

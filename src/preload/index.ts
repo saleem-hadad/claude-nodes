@@ -27,6 +27,13 @@ const api: Api = {
     stats: () => ipcRenderer.invoke(IPC.projectsStats)
   },
 
+  groups: {
+    list: () => ipcRenderer.invoke(IPC.groupsList),
+    create: (name) => ipcRenderer.invoke(IPC.groupsCreate, name),
+    update: (id, patch) => ipcRenderer.invoke(IPC.groupsUpdate, id, patch),
+    remove: (id) => ipcRenderer.invoke(IPC.groupsRemove, id)
+  },
+
   board: {
     load: (projectId) => ipcRenderer.invoke(IPC.boardLoad, projectId),
     saveNodes: (projectId, patches) => ipcRenderer.invoke(IPC.boardSaveNodes, projectId, patches),

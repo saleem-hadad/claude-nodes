@@ -14,6 +14,7 @@ import type {
   NodePatch,
   OpenSessionResult,
   Project,
+  ProjectGroup,
   ProjectStats,
   Rect,
   SessionCard,
@@ -36,6 +37,11 @@ export const IPC = {
   projectsRemove: 'projects:remove',
   projectsReveal: 'projects:reveal',
   projectsStats: 'projects:stats',
+
+  groupsList: 'groups:list',
+  groupsCreate: 'groups:create',
+  groupsUpdate: 'groups:update',
+  groupsRemove: 'groups:remove',
 
   boardLoad: 'board:load',
   boardSaveNodes: 'board:save-nodes',
@@ -98,10 +104,22 @@ export interface Api {
      * already a project returns the existing project.
      */
     add(repoPath?: string): Promise<Project | null>
-    update(id: string, patch: { name?: string; color?: FolderColor }): Promise<Project>
+    /** `groupId: null` takes the project out of its group. */
+    update(
+      id: string,
+      patch: { name?: string; color?: FolderColor; archived?: boolean; groupId?: string | null }
+    ): Promise<Project>
     remove(id: string): Promise<void>
     revealInFinder(id: string): Promise<void>
     stats(): Promise<Record<string, ProjectStats>>
+  }
+
+  groups: {
+    list(): Promise<ProjectGroup[]>
+    create(name: string): Promise<ProjectGroup>
+    update(id: string, patch: { name?: string; collapsed?: boolean }): Promise<ProjectGroup>
+    /** Deletes a group; its projects become ungrouped. */
+    remove(id: string): Promise<void>
   }
 
   board: {

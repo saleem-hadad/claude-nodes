@@ -82,6 +82,21 @@
   transform: translateY(-50%);
 }
 
+.rail-sep {
+  flex: none;
+  width: 24px;
+  height: 0.5px;
+  margin: 2px 0;
+  background: var(--border-strong);
+}
+
+.rail-add {
+  color: var(--text-secondary);
+}
+.rail-add:hover {
+  color: var(--text-primary);
+}
+
 .rail-item .status-dot.rail-dot {
   position: absolute;
   top: 4px;

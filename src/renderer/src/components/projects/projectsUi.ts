@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Project } from '@shared/types'
+import type { Project, ProjectGroup } from '@shared/types'
 import { useApp } from '@renderer/store'
 
 interface ProjectsUiState {
@@ -28,9 +28,12 @@ const folderName = (path: string) => path.split('/').filter(Boolean).pop() ?? pa
 
 /**
  * Adds a project (from a path, or via the native folder picker when omitted),
- * selects it and shows it in the projects grid.
+ * selects it and shows it in the projects grid, or with `open`, opens its board.
  */
-export async function addProject(repoPath?: string): Promise<Project | null> {
+export async function addProject(
+  repoPath?: string,
+  { open = false }: { open?: boolean } = {}
+): Promise<Project | null> {
   const ui = useProjectsUi.getState()
   let project: Project | null
   try {
@@ -45,6 +48,15 @@ export async function addProject(repoPath?: string): Promise<Project | null> {
   }
   if (!project) return null
 
+  if (open) {
+    await useApp.getState().refreshProjects()
+    const { route, navigate } = useApp.getState()
+    if (route.view !== 'board' || route.projectId !== project.id) {
+      navigate({ view: 'board', projectId: project.id })
+    }
+    return project
+  }
+
   ui.select(project.id)
   const app = useApp.getState()
   if (app.route.view !== 'projects') app.navigate({ view: 'projects' })
@@ -57,6 +69,35 @@ export function sortProjects(projects: Project[]): Project[] {
   return [...projects].sort(
     (a, b) => (b.openedAt ?? 0) - (a.openedAt ?? 0) || b.createdAt - a.createdAt
   )
+}
+
+/** Groups in the order they were created. */
+export function sortGroups(groups: ProjectGroup[]): ProjectGroup[] {
+  return [...groups].sort((a, b) => a.createdAt - b.createdAt)
+}
+
+/** Splits projects (keeping their order) into the ungrouped ones and one list per group. */
+export function groupProjects(projects: Project[], groups: ProjectGroup[]) {
+  const known = new Set(groups.map((g) => g.id))
+  return {
+    ungrouped: projects.filter((p) => !p.groupId || !known.has(p.groupId)),
+    byGroup: sortGroups(groups).map((group) => ({
+      group,
+      projects: projects.filter((p) => p.groupId === group.id)
+    }))
+  }
+}
+
+/** Files a project under a group, or takes it out of its group with null. */
+export async function moveToGroup(projectId: string, groupId: string | null) {
+  await window.api.projects.update(projectId, { groupId })
+  await useApp.getState().refreshProjects()
+}
+
+/** Applies a change to a group right away, then saves it. */
+export async function updateGroup(id: string, patch: { name?: string; collapsed?: boolean }) {
+  useApp.setState((s) => ({ groups: s.groups.map((g) => (g.id === id ? { ...g, ...patch } : g)) }))
+  await window.api.groups.update(id, patch)
 }
 
 /** The letter embossed on a project's folder. */
