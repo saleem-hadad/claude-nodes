@@ -63,6 +63,7 @@ https://github.com/user-attachments/assets/21921a47-2635-4bc4-83f8-166f83134bde
 - **Live status** from Claude Code hooks: 🟠 working · 🔴 needs you · 🔵 done.
 - **The real terminal.** Click a card to open the actual `claude` TUI, or expand it right on the board and resize it. Press **T** for a shell in the project folder.
 - **Agents as a deck.** When Claude runs agents, they peek out from under the session's card in their status colours. Point at the deck to fan them out and see what each is doing, or click one for its live transcript.
+- **Sessions outlive the app.** Quit Claude Nodes and your sessions keep working. Open it again and they're right where you left them.
 - **New session from context.** Select a few cards and start a session that already knows what they did.
 - **A searchable archive.** Old sessions stack up in one pile. Drag a card out to pick it up again.
 

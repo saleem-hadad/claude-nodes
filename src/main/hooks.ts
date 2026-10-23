@@ -7,9 +7,6 @@
 // Hooks fired inside a subagent carry its agent_id. Those drive the agent's own
 // status, and a card reads as working (or waiting) while its main thread or any
 // of its agents is.
-import http from 'http'
-import crypto from 'crypto'
-import type { AddressInfo } from 'net'
 import type { SessionStatus } from '@shared/types'
 
 const HOOK_EVENTS = [
@@ -31,9 +28,8 @@ type Json = Record<string, any>
 export type StatusListener = (sessionId: string, status: SessionStatus, live: boolean) => void
 export type AgentStatusListener = (sessionId: string, agentId: string, status: SessionStatus) => void
 
-let server: http.Server | null = null
-let port = 0
-const token = crypto.randomBytes(16).toString('hex')
+/** The session host's hook server, which passes hooks on to receiveHook. */
+let endpoint = { port: 0, token: '' }
 
 /** Status of each session's main thread. */
 const statuses = new Map<string, SessionStatus>()
@@ -98,12 +94,11 @@ export function setStatus(sessionId: string, status: SessionStatus, liveOverride
   emit(sessionId, liveOverride)
 }
 
-function setAgentStatus(sessionId: string, agentId: string, status: SessionStatus) {
+function setAgentStatus(sessionId: string, agentId: string, status: SessionStatus, at = Date.now()) {
   let agents = agentHooks.get(sessionId)
   if (!agents) agentHooks.set(sessionId, (agents = new Map()))
   const prev = agents.get(agentId)
-  const now = Date.now()
-  agents.set(agentId, { status, at: now, since: prev?.status === status ? prev.since : now })
+  agents.set(agentId, { status, at, since: prev?.status === status ? prev.since : at })
   if (prev?.status !== status) agentListener(sessionId, agentId, status)
   emit(sessionId)
 }
@@ -164,33 +159,33 @@ const isPermissionNotification = (payload: Json) => {
   return type === 'permission_prompt' || type === 'elicitation_dialog' || /permission/i.test(message)
 }
 
-function handleAgentHook(event: HookEvent, sessionId: string, agentId: string, payload: Json) {
+function handleAgentHook(event: HookEvent, sessionId: string, agentId: string, payload: Json, at: number) {
   switch (event) {
     case 'SubagentStop': {
       // An agent that ended its turn with a command still running in the background will be woken by it.
       const file = payload.agent_transcript_path
       const waking = typeof file === 'string' && hasPendingWork(file)
-      return setAgentStatus(sessionId, agentId, waking ? 'working' : 'done')
+      return setAgentStatus(sessionId, agentId, waking ? 'working' : 'done', at)
     }
     case 'PermissionRequest':
-      return setAgentStatus(sessionId, agentId, 'waiting')
+      return setAgentStatus(sessionId, agentId, 'waiting', at)
     case 'PreToolUse':
-      return setAgentStatus(sessionId, agentId, payload.tool_name === 'AskUserQuestion' ? 'waiting' : 'working')
+      return setAgentStatus(sessionId, agentId, payload.tool_name === 'AskUserQuestion' ? 'waiting' : 'working', at)
     case 'Notification':
-      if (isPermissionNotification(payload)) setAgentStatus(sessionId, agentId, 'waiting')
+      if (isPermissionNotification(payload)) setAgentStatus(sessionId, agentId, 'waiting', at)
       return
     case 'SubagentStart':
     case 'PostToolUse':
     case 'UserPromptSubmit':
-      return setAgentStatus(sessionId, agentId, 'working')
+      return setAgentStatus(sessionId, agentId, 'working', at)
   }
 }
 
-function handleHook(event: HookEvent, sessionId: string, payload: Json) {
+function handleHook(event: HookEvent, sessionId: string, payload: Json, at: number) {
   const agentId = typeof payload.agent_id === 'string' && payload.agent_id ? payload.agent_id : null
-  if (agentId) return handleAgentHook(event, sessionId, agentId, payload)
+  if (agentId) return handleAgentHook(event, sessionId, agentId, payload, at)
 
-  lastHookAt.set(sessionId, Date.now())
+  lastHookAt.set(sessionId, at)
   const current = statuses.get(sessionId) ?? 'done'
 
   switch (event) {
@@ -222,7 +217,7 @@ function handleHook(event: HookEvent, sessionId: string, payload: Json) {
  * when the user interrupts (Esc / Ctrl+C), and approving a permission prompt
  * fires nothing until the tool finishes.
  */
-export function noteUserInput(sessionId: string, data: string) {
+export function noteUserInput(sessionId: string, data: string, at = Date.now()) {
   const current = statuses.get(sessionId)
   const mainActive = current === 'working' || current === 'waiting'
   const waitingAgent = longestWaitingAgent(sessionId)
@@ -232,12 +227,11 @@ export function noteUserInput(sessionId: string, data: string) {
   // up, so the answer is for the one that has waited longest.
   const isKey = data === '\r' || /^[1-9]$/.test(data) || data === '\x1b' || data === '\x03'
   if (current !== 'waiting' && waitingAgent && isKey) {
-    setAgentStatus(sessionId, waitingAgent, 'working')
+    setAgentStatus(sessionId, waitingAgent, 'working', at)
     return
   }
 
   if (data === '\x1b' || data === '\x03') {
-    const at = Date.now()
     const prev = interruptTimers.get(sessionId)
     if (prev) clearTimeout(prev)
     interruptTimers.set(
@@ -259,54 +253,29 @@ export function noteUserInput(sessionId: string, data: string) {
 }
 
 // ---------------------------------------------------------------------------
-// Server
+// Endpoint
+//
+// The hook server runs in the session host (host.ts), so it outlives the app
+// along with the processes posting to it.
 
-export function startHookServer(): Promise<void> {
-  if (server) return Promise.resolve()
-  return new Promise((resolve, reject) => {
-    const srv = http.createServer((req, res) => {
-      const url = new URL(req.url ?? '/', 'http://127.0.0.1')
-      if (req.method !== 'POST' || url.pathname !== '/hook' || url.searchParams.get('token') !== token) {
-        res.writeHead(404).end()
-        req.resume()
-        return
-      }
-      const chunks: Buffer[] = []
-      req.on('data', (c: Buffer) => chunks.push(c))
-      req.on('end', () => {
-        res.writeHead(204).end()
-        const event = url.searchParams.get('evt') as HookEvent | null
-        const sessionId = url.searchParams.get('sid')
-        if (!event || !sessionId || !HOOK_EVENTS.includes(event)) return
-        let payload: Json = {}
-        try {
-          const body = Buffer.concat(chunks).toString('utf8')
-          if (body) payload = JSON.parse(body)
-        } catch {
-          // Status still updates from the event name alone.
-        }
-        handleHook(event, sessionId, payload)
-      })
-    })
-    srv.on('error', reject)
-    srv.listen(0, '127.0.0.1', () => {
-      port = (srv.address() as AddressInfo).port
-      server = srv
-      resolve()
-    })
-  })
+export function setHookEndpoint(port: number, token: string) {
+  endpoint = { port, token }
 }
 
-export function stopHookServer() {
-  server?.close()
-  server = null
+/**
+ * A hook fired by a session's process, passed on by the session host. Hooks
+ * replayed after a relaunch keep the time they fired, as do keystrokes passed
+ * to noteUserInput: agents.ts and the interrupt check compare against it.
+ */
+export function receiveHook(event: string, sessionId: string, payload: Json, at = Date.now()) {
+  if (HOOK_EVENTS.includes(event as HookEvent)) handleHook(event as HookEvent, sessionId, payload ?? {}, at)
 }
 
 /** Env vars a spawned claude process needs so its hooks can reach us. */
 export function hookEnv(sessionId: string): Record<string, string> {
   return {
-    CLAUDE_NODES_PORT: String(port),
-    CLAUDE_NODES_TOKEN: token,
+    CLAUDE_NODES_PORT: String(endpoint.port),
+    CLAUDE_NODES_TOKEN: endpoint.token,
     CLAUDE_NODES_SESSION: sessionId
   }
 }

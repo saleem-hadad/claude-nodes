@@ -6,7 +6,11 @@ const shared = { '@shared': resolve('src/shared') }
 
 export default defineConfig({
   main: {
-    resolve: { alias: shared }
+    resolve: { alias: shared },
+    build: {
+      // host.ts runs as its own process: the session host.
+      lib: { entry: { index: resolve('src/main/index.ts'), host: resolve('src/main/host.ts') } }
+    }
   },
   preload: {
     resolve: { alias: shared }

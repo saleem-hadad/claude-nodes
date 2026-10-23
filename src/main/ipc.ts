@@ -38,7 +38,7 @@ import {
 } from './discovery'
 import { getClaudePath, getClaudeVersion, initEnv } from './env'
 import { gitDiff, gitStatus } from './git'
-import { configureStatus, forgetStatus, startHookServer, stopHookServer } from './hooks'
+import { configureStatus, forgetStatus } from './hooks'
 import { installMenu } from './menu'
 import { nameSection, type NamingSource } from './naming'
 import * as ptys from './pty'
@@ -83,7 +83,6 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
 
   // Capturing the login-shell env can take a few seconds; don't block the window on it.
   const envReady = initEnv().catch((err) => console.error('[env] init failed', err))
-  await startHookServer()
 
   const send = (channel: string, ...args: unknown[]) => {
     const win = getWindow()
@@ -101,6 +100,8 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
     hasPendingWork
   })
   installMenu((command) => send(IPC.evMenu, command))
+  // Sessions still running from before the app last quit. A host is only started for a new session.
+  await ptys.connectHost(false).catch((err) => console.error('[host] connect failed', err))
 
   // --- App -----------------------------------------------------------------
 
@@ -386,7 +387,7 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
       }
       board.nodes[sessionId] = node
       try {
-        ptys.spawnSession({
+        await ptys.spawnSession({
           sessionId,
           projectId,
           cwd: project.repoPath,
@@ -413,7 +414,7 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
       }
       await envReady
       const project = getProject(projectId)
-      ptys.spawnSession({
+      await ptys.spawnSession({
         sessionId,
         projectId,
         cwd: project.repoPath,
@@ -484,9 +485,9 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
   )
 }
 
+/** Sessions keep running in the session host; the app just lets go of them. */
 export function shutdown() {
-  ptys.killAll()
+  ptys.disconnect()
   unwatchAll()
-  stopHookServer()
   flush()
 }

@@ -63,7 +63,7 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => {
-  // Sessions keep running while the window is closed on macOS; quitting stops them.
+  // The app stays open on macOS. Either way sessions keep running in the session host.
   if (process.platform !== 'darwin') app.quit()
 })
 
