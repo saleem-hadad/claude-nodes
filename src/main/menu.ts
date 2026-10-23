@@ -1,5 +1,6 @@
 import { app, Menu, type MenuItemConstructorOptions } from 'electron'
 import type { MenuCommand } from '@shared/api'
+import { stopAll } from './pty'
 
 /**
  * Application menu. File-menu shortcuts are forwarded to the renderer as menu
@@ -21,7 +22,13 @@ export function installMenu(send: (command: MenuCommand) => void) {
         { role: 'hideOthers' },
         { role: 'unhide' },
         { type: 'separator' },
-        { role: 'quit' }
+        // Quitting leaves sessions running in the session host.
+        { role: 'quit' },
+        {
+          label: 'Quit and Stop Sessions',
+          accelerator: 'Alt+CmdOrCtrl+Q',
+          click: () => void stopAll().finally(() => app.quit())
+        }
       ]
     },
     {
