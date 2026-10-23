@@ -123,6 +123,21 @@ textarea {
   animation: status-pulse 1.1s ease-out infinite;
 }
 
+/* For lists of agents, where the dot sits beside a single line of small text. */
+.status-dot.is-small {
+  width: 7px;
+  height: 7px;
+}
+.status-dot.is-small[data-status='working'] {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--status-working) 22%, transparent);
+  animation-name: status-breathe-small;
+}
+
+@keyframes status-breathe-small {
+  50% {
+    box-shadow: 0 0 0 3.5px color-mix(in srgb, var(--status-working) 10%, transparent);
+  }
+}
 @keyframes status-breathe {
   50% {
     box-shadow: 0 0 0 5px color-mix(in srgb, var(--status-working) 10%, transparent);

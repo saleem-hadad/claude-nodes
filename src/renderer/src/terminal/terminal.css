@@ -321,6 +321,15 @@
   box-shadow: inset 0 0 0 0.5px var(--separator);
 }
 
+/* A note from Claude Code, like a background task finishing: quieter than a message. */
+.tp-msg[data-notice] .tp-msg-content {
+  padding: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
 .tp-text {
   white-space: pre-wrap;
   word-break: break-word;
@@ -360,6 +369,42 @@
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   color: var(--text-secondary);
+}
+
+/* An agent's tool calls, a line each: the tool, then what it acted on. */
+.tp-calls {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 6px;
+}
+.tp-calls .tp-more {
+  align-self: flex-start;
+  margin: 0 0 2px;
+}
+.tp-call {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 18px;
+}
+.tp-call-name {
+  flex: none;
+  padding: 0 7px;
+  border-radius: 5px;
+  background: var(--bg-sunken);
+  box-shadow: inset 0 0 0 0.5px var(--border);
+  color: var(--text-secondary);
+}
+.tp-call-detail {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-tertiary);
 }
 
 .tp-empty {
@@ -414,4 +459,127 @@
   to {
     background-position: -100% 0;
   }
+}
+
+/* ───────────── Agents viewer ───────────── */
+
+.av-modal {
+  width: min(1080px, 94vw);
+  height: 82vh;
+}
+
+.av-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.av-status[data-status='working'] {
+  color: var(--status-working);
+}
+.av-status[data-status='waiting'] {
+  color: var(--status-waiting);
+}
+.av-session {
+  max-width: 300px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-tertiary);
+}
+
+.av-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.av-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: none;
+  width: 272px;
+  padding: 8px;
+  overflow-y: auto;
+  border-right: 0.5px solid var(--separator);
+  background: var(--bg-sunken);
+}
+.av-list-note {
+  padding: 12px;
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+}
+.av-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  flex: none;
+  width: 100%;
+  padding: 7px 12px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  text-align: left;
+  transition: background var(--dur-fast) ease;
+}
+.av-item .status-dot {
+  margin-top: 5px;
+}
+.av-item:hover {
+  background: var(--bg-hover);
+}
+.av-item[aria-current='true'] {
+  background: var(--bg-selected);
+}
+.av-item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.av-item-name {
+  font-size: var(--text-md);
+  color: var(--text-primary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.av-item-sub {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.av-detail {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Under the transcript of an agent at work: what it's doing right now. */
+.av-live {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 18px;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  background: var(--bg-sunken);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+.av-live-text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.av-live[data-status='waiting'] {
+  color: var(--status-waiting);
 }

@@ -5,7 +5,7 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import type { SessionMeta, TranscriptMessage } from '@shared/types'
+import type { SessionMeta, ToolCall, TranscriptMessage } from '@shared/types'
 
 const LARGE_FILE = 4 * 1024 * 1024
 const HEAD_BYTES = 256 * 1024
@@ -14,6 +14,12 @@ const TRANSCRIPT_MAX_BYTES = 16 * 1024 * 1024
 const TRANSCRIPT_MAX_MESSAGES = 500
 
 const SESSION_FILE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jsonl$/i
+const AGENT_FILE = /^agent-([\w-]+)\.jsonl$/
+/** Agent ids are used in paths, so only ever accept this shape. */
+export const AGENT_ID = /^[\w-]+$/
+
+/** The tool a background agent calls to deliver its report; its message is the agent's last word. */
+export const HANDBACK_TOOL = 'SubagentHandback'
 
 /** User-message text that is tooling noise rather than something the user typed. */
 const NOISE_PREFIXES = [
@@ -66,10 +72,62 @@ export function listSessionFiles(repoPath: string): { sessionId: string; file: s
     .map((n) => ({ sessionId: n.slice(0, -'.jsonl'.length), file: path.join(dir, n) }))
 }
 
+/** Where Claude Code keeps the transcripts of a session's subagents. */
+export function subagentsDir(repoPath: string, sessionId: string) {
+  return path.join(transcriptDir(repoPath), sessionId, 'subagents')
+}
+
+export interface AgentFile {
+  agentId: string
+  file: string
+  /** agent-<id>.meta.json: the agent's type and description, rewritten when it ends. */
+  metaFile: string
+}
+
+export function listAgentFiles(repoPath: string, sessionId: string): AgentFile[] {
+  const dir = subagentsDir(repoPath, sessionId)
+  let names: string[]
+  try {
+    names = fs.readdirSync(dir)
+  } catch {
+    return []
+  }
+  const out: AgentFile[] = []
+  for (const n of names) {
+    const agentId = AGENT_FILE.exec(n)?.[1]
+    if (!agentId) continue
+    out.push({ agentId, file: path.join(dir, n), metaFile: path.join(dir, `agent-${agentId}.meta.json`) })
+  }
+  return out
+}
+
+/** A cheap fingerprint of a session's subagent files (count, bytes, latest write) for the watcher. */
+function agentsSignature(repoPath: string, sessionId: string): string {
+  const dir = subagentsDir(repoPath, sessionId)
+  let names: string[]
+  try {
+    names = fs.readdirSync(dir)
+  } catch {
+    return ''
+  }
+  let bytes = 0
+  let latest = 0
+  for (const n of names) {
+    try {
+      const st = fs.statSync(path.join(dir, n))
+      bytes += st.size
+      latest = Math.max(latest, st.mtimeMs)
+    } catch {
+      // Removed while we looked.
+    }
+  }
+  return `${names.length}:${bytes}:${latest}`
+}
+
 // ---------------------------------------------------------------------------
 // Line helpers
 
-type Json = Record<string, any>
+export type Json = Record<string, any>
 
 interface UserText {
   text: string
@@ -93,16 +151,20 @@ function promptFull(text: string) {
   return text.replace(PASTED_TAG, '').trim()
 }
 
-function truncate(text: string, max: number) {
+export function truncate(text: string, max: number) {
   const flat = text.replace(/\s+/g, ' ').trim()
   return flat.length > max ? `${flat.slice(0, max - 1).trimEnd()}…` : flat
 }
 
-/** Returns the prompt the user typed, or null for tool results, meta and noise. */
-function userText(line: Json): UserText | null {
+/**
+ * Returns the prompt the user typed, or null for tool results, meta and noise.
+ * In an agent's transcript the prompts come from the session rather than a
+ * person, so `anyOrigin` keeps them.
+ */
+function userText(line: Json, anyOrigin = false): UserText | null {
   if (line.isMeta || line.isCompactSummary || line.isVisibleInTranscriptOnly) return null
   const origin = line.origin?.kind
-  if (origin && origin !== 'human') return null
+  if (origin && origin !== 'human' && !anyOrigin) return null
 
   const content = line.message?.content
   let text = ''
@@ -130,22 +192,60 @@ function userText(line: Json): UserText | null {
   return cleaned ? { text: cleaned, isCommand: false } : null
 }
 
-function assistantParts(line: Json): { text: string; tools: string[] } {
-  const content = line.message?.content
-  if (typeof content === 'string') return { text: content.trim(), tools: [] }
-  if (!Array.isArray(content)) return { text: '', tools: [] }
-  const text = content
-    .filter((b) => b?.type === 'text' && typeof b.text === 'string')
-    .map((b) => b.text)
-    .join('\n')
-    .trim()
-  const tools = content
-    .filter((b) => b?.type === 'tool_use' && typeof b.name === 'string')
-    .map((b) => b.name as string)
-  return { text, tools }
+interface AssistantParts {
+  text: string
+  tools: string[]
+  /** The tool_use blocks behind `tools`. */
+  uses: Json[]
+  /** A background agent handed in its report: `text` ends with it. */
+  handback: boolean
 }
 
-function timeOf(line: Json): number | undefined {
+export function assistantParts(line: Json): AssistantParts {
+  const content = line.message?.content
+  if (typeof content === 'string') return { text: content.trim(), tools: [], uses: [], handback: false }
+  if (!Array.isArray(content)) return { text: '', tools: [], uses: [], handback: false }
+  const texts = content.filter((b) => b?.type === 'text' && typeof b.text === 'string').map((b) => b.text as string)
+  const uses: Json[] = []
+  let handback = false
+  for (const b of content) {
+    if (b?.type !== 'tool_use' || typeof b.name !== 'string') continue
+    // The handback is the agent's reply, not a step of its work.
+    if (b.name === HANDBACK_TOOL) {
+      handback = true
+      if (typeof b.input?.message === 'string') texts.push(b.input.message)
+    } else {
+      uses.push(b)
+    }
+  }
+  return { text: texts.join('\n').trim(), tools: uses.map((b) => b.name as string), uses, handback }
+}
+
+/** MCP tools are named mcp__<server>__<tool>; the tool's own name reads best. */
+function toolName(name: string) {
+  return name.startsWith('mcp__') ? name.slice(name.lastIndexOf('__') + 2) || name : name
+}
+
+/** A tool_use block as a name and a one-line summary of what it acted on. */
+export function describeToolUse(use: Json): ToolCall {
+  const input: Json = use.input && typeof use.input === 'object' ? use.input : {}
+  const str = (key: string) =>
+    typeof input[key] === 'string' && input[key].trim() ? (input[key] as string) : undefined
+  const file = str('file_path') ?? str('notebook_path')
+  const detail =
+    str('command') ??
+    (file ? path.basename(file) : undefined) ??
+    str('pattern') ??
+    str('url') ??
+    str('query') ??
+    str('description') ??
+    str('skill') ??
+    str('path') ??
+    str('prompt')
+  return { name: toolName(String(use.name)), detail: detail ? truncate(detail, 160) : undefined }
+}
+
+export function timeOf(line: Json): number | undefined {
   if (typeof line.timestamp !== 'string') return undefined
   const t = Date.parse(line.timestamp)
   return Number.isNaN(t) ? undefined : t
@@ -155,7 +255,7 @@ function timeOf(line: Json): number | undefined {
 // Chunked reading
 
 /** Parses complete JSON lines from a byte range. Returns the offset after the last newline. */
-function readLines(
+export function readLines(
   fd: number,
   start: number,
   end: number,
@@ -204,6 +304,8 @@ interface ParseState {
   firstPrompt?: string
   firstCommand?: string
   lastPrompt?: string
+  /** When the user last sent a prompt; agents that finished before it belong to an earlier run. */
+  lastPromptAt?: number
   lastAssistantText?: string
   lastAssistantId?: string
   gitBranch?: string
@@ -244,6 +346,7 @@ function applyLine(s: ParseState, line: Json) {
       const u = userText(line)
       if (!u) return
       s.prompts++
+      if (t !== undefined) s.lastPromptAt = Math.max(s.lastPromptAt ?? 0, t)
       if (u.isCommand) {
         s.firstCommand ??= u.text
       } else {
@@ -314,6 +417,7 @@ export interface DiscoveredSession {
   eligible: boolean
   /** Has at least a prompt or a title; otherwise the meta is not worth showing. */
   hasContent: boolean
+  lastPromptAt?: number
 }
 
 export function readSession(sessionId: string, file: string): DiscoveredSession | null {
@@ -335,7 +439,7 @@ export function readSession(sessionId: string, file: string): DiscoveredSession 
   }
   const eligible = s.sidechain !== true && s.prompts > 0 && s.hasAssistant
   const hasContent = s.prompts > 0 || !!s.customTitle || !!s.aiTitle
-  return { meta, eligible, hasContent }
+  return { meta, eligible, hasContent, lastPromptAt: s.lastPromptAt }
 }
 
 /** All sessions on disk for a repo, keyed by session id. */
@@ -354,9 +458,34 @@ export function metaSignature(meta: SessionMeta) {
 }
 
 // ---------------------------------------------------------------------------
-// Transcript for the archived preview
+// Transcripts for the archived preview and the agent viewer
 
-export function readTranscript(file: string): TranscriptMessage[] {
+/** All the text in a line's message, whether its content is a string or blocks. */
+export function messageText(line: Json): string {
+  const content = line.message?.content
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  return content.map((b) => (typeof b?.text === 'string' ? b.text : '')).join('\n')
+}
+
+/** Whether a user line is a task notification: a background command (or task) reporting that it ended. */
+export function isTaskNotification(line: Json): boolean {
+  return line.origin?.kind === 'task-notification' || messageText(line).includes('<task-notification>')
+}
+
+/** The summary of a task notification, if the line is one. */
+function taskNotification(line: Json): string | null {
+  if (!isTaskNotification(line)) return null
+  const summary = /<summary>([\s\S]*?)<\/summary>/.exec(messageText(line))?.[1]?.trim()
+  return summary || 'A background task finished'
+}
+
+/**
+ * The conversation in a transcript. `agent` reads a subagent's transcript: its
+ * lines are all sidechain lines, its prompts come from the session, and each
+ * tool call keeps what it acted on.
+ */
+export function readTranscript(file: string, { agent = false } = {}): TranscriptMessage[] {
   let size: number
   try {
     size = fs.statSync(file).size
@@ -371,18 +500,29 @@ export function readTranscript(file: string): TranscriptMessage[] {
   try {
     const start = Math.max(0, size - TRANSCRIPT_MAX_BYTES)
     readLines(fd, start, size, start > 0, (line) => {
-      if (line.isSidechain) return
+      if (line.isSidechain && !agent) return
       if (line.type === 'user') {
-        const u = userText(line)
+        // An agent waits on a background command, and its notification wakes it.
+        const note = agent ? taskNotification(line) : null
+        if (note) {
+          turn = null
+          messages.push({ role: 'user', text: note, timestamp: timeOf(line) ?? 0, notice: true })
+          return
+        }
+        const u = userText(line, agent)
         if (!u) return
         turn = null
         messages.push({ role: 'user', text: promptFull(u.text), timestamp: timeOf(line) ?? 0 })
       } else if (line.type === 'assistant') {
-        const { text, tools } = assistantParts(line)
+        const { text, tools, uses } = assistantParts(line)
         if (!text && !tools.length) return
         // Consecutive assistant lines (tool loops) form one turn in the preview.
+        // An agent works in one long turn, so there each thing it says after
+        // some calls starts a new step, keeping its notes beside its calls.
+        if (agent && text && turn?.calls?.length) turn = null
         if (!turn) {
           turn = { role: 'assistant', text: '', timestamp: timeOf(line) ?? 0, tools: [] }
+          if (agent) turn.calls = []
           messages.push(turn)
         }
         if (text) {
@@ -392,13 +532,17 @@ export function readTranscript(file: string): TranscriptMessage[] {
         }
         lastAssistantId = line.message?.id
         for (const tool of tools) turn.tools!.push(tool)
+        if (turn.calls) for (const use of uses) turn.calls.push(describeToolUse(use))
       }
     })
   } finally {
     fs.closeSync(fd)
   }
 
-  for (const m of messages) if (m.tools && m.tools.length === 0) delete m.tools
+  for (const m of messages) {
+    if (m.tools && m.tools.length === 0) delete m.tools
+    if (m.calls && m.calls.length === 0) delete m.calls
+  }
   return messages.slice(-TRANSCRIPT_MAX_MESSAGES)
 }
 
@@ -418,13 +562,14 @@ const watches = new Map<string, Watch>()
 
 function snapshotSignatures(repoPath: string) {
   const sigs = new Map<string, string>()
-  for (const [id, s] of scanRepo(repoPath)) sigs.set(id, metaSignature(s.meta))
+  for (const [id, s] of scanRepo(repoPath)) sigs.set(id, `${metaSignature(s.meta)}|${agentsSignature(repoPath, id)}`)
   return sigs
 }
 
 /**
- * Watches a project's transcript directory and calls onChange (throttled) when
- * a session's metadata changes or a new session appears.
+ * Watches a project's transcript directory, subagent transcripts included, and
+ * calls onChange (throttled) when a session's metadata or subagents change or a
+ * new session appears.
  */
 export function watchProject(projectId: string, repoPath: string, onChange: () => void) {
   const existing = watches.get(projectId)
@@ -465,16 +610,19 @@ export function watchProject(projectId: string, repoPath: string, onChange: () =
     }
   }
 
+  // A check already pending will see this change too. Not restarting the timer
+  // keeps the board updating while transcripts are written to without pause,
+  // as they are while several agents work.
   const schedule = () => {
-    if (w.debounce) clearTimeout(w.debounce)
-    w.debounce = setTimeout(check, 500)
+    if (!w.debounce) w.debounce = setTimeout(check, 500)
   }
 
   const attach = () => {
     const dir = transcriptDir(repoPath)
     if (!fs.existsSync(dir)) return false
     try {
-      w.watcher = fs.watch(dir, { persistent: false }, schedule)
+      // Recursive, for <session id>/subagents/ (FSEvents makes this cheap on macOS).
+      w.watcher = fs.watch(dir, { persistent: false, recursive: true }, schedule)
       w.watcher.on('error', () => {
         w.watcher?.close()
         w.watcher = null

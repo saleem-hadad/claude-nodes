@@ -5,6 +5,7 @@ import { ProjectsView } from './views/ProjectsView'
 import { BoardView } from './views/BoardView'
 import { TerminalModal } from './terminal/TerminalModal'
 import { TranscriptPreview } from './terminal/TranscriptPreview'
+import { AgentViewer } from './terminal/AgentViewer'
 import { DiffModal } from './components/git/DiffModal'
 import { SettingsDialog } from './components/SettingsDialog'
 import { ProjectRail } from './components/projects/ProjectRail'
@@ -17,6 +18,9 @@ export function App() {
 
     const offStatus = window.api.on.status((sessionId, status, live) => {
       useApp.getState().setStatus(sessionId, status, live)
+    })
+    const offAgentStatus = window.api.on.agentStatus((sessionId, agentId, status) => {
+      useApp.getState().setAgentStatus(sessionId, agentId, status)
     })
 
     // Folder badges (in the grid and the project rail) show live counts, so refresh stats when statuses change.
@@ -37,6 +41,7 @@ export function App() {
       if (command !== 'close') return
       const s = useApp.getState()
       if (s.settingsOpen) s.closeSettings()
+      else if (s.agentView) s.closeAgents()
       else if (s.terminalSessionId) s.closeTerminal()
       else if (s.previewSessionId) s.closePreview()
       else if (s.diffOpen) s.closeDiff()
@@ -52,6 +57,7 @@ export function App() {
       window.removeEventListener('dragover', blockDrop)
       window.removeEventListener('drop', blockDrop)
       offStatus()
+      offAgentStatus()
       offStatsRefresh()
       offBoard()
       offMenu()
@@ -74,6 +80,7 @@ export function App() {
       </main>
       <TerminalModal />
       <TranscriptPreview />
+      <AgentViewer />
       <DiffModal />
       <SettingsDialog />
     </div>

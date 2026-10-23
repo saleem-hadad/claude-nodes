@@ -119,12 +119,49 @@ export interface BoardSection {
   createdAt: number
 }
 
+/**
+ * A subagent a session started with Claude's Agent tool. Claude Code keeps its
+ * transcript beside the session's, in <session id>/subagents/agent-<id>.jsonl.
+ */
+export interface AgentInfo {
+  agentId: string
+  /** e.g. general-purpose, Explore, fork, or a custom agent's name. */
+  agentType: string
+  /** The short task description Claude gave the agent. */
+  description: string
+  /** Driven by the hooks Claude runs inside the agent; done once the session's process is gone. */
+  status: SessionStatus
+  /** Set when the agent was started by another agent rather than by the session. */
+  parentAgentId?: string
+  /** The user stopped it before it finished. */
+  stopped?: boolean
+  /** The tool it is running (or last ran), when its latest step was a tool call. */
+  tool?: string
+  /** One line on its latest step: what the tool acted on, or what it said. */
+  activity?: string
+  /**
+   * Background commands it is waiting on, having ended its turn. Each wakes it
+   * when it finishes, so it reads as working meanwhile.
+   */
+  background?: number
+  toolCount: number
+  startedAt: number
+  updatedAt: number
+}
+
 /** Everything the renderer needs to draw a card. */
 export interface SessionCard extends BoardNode {
   meta?: SessionMeta
   status: SessionStatus
   /** Whether a claude process is currently running for this session. */
   live: boolean
+  /**
+   * Subagents of the current run, oldest first: those still running, and those
+   * that finished since the last prompt. Active Claude cards only.
+   */
+  agents?: AgentInfo[]
+  /** How many subagents the session has started in all. */
+  agentCount?: number
 }
 
 export interface BoardSnapshot {
@@ -176,12 +213,22 @@ export interface SummarizeProgress {
   error?: string
 }
 
+export interface ToolCall {
+  name: string
+  /** What the call acted on, in one line: a command, a file name, a pattern. */
+  detail?: string
+}
+
 export interface TranscriptMessage {
   role: 'user' | 'assistant'
   text: string
   timestamp: number
   /** Names of tools Claude called in this message, if any. */
   tools?: string[]
+  /** The same calls with what each acted on; agent transcripts only. */
+  calls?: ToolCall[]
+  /** A note from Claude Code rather than a message, such as a background task finishing. */
+  notice?: boolean
 }
 
 export interface OpenSessionResult {

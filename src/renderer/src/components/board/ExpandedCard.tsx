@@ -26,8 +26,11 @@ export function wakeCardTerminal(sessionId: string) {
 
 const stop = (e: MouseEvent) => e.stopPropagation()
 
-/** The inside of an expanded card: its title bar over the session's live terminal. */
-export function ExpandedCard({ card, heading }: { card: SessionCard; heading: ReactNode }) {
+/**
+ * The inside of an expanded card: its title bar over the session's live
+ * terminal. `tools` go first among the title bar's buttons.
+ */
+export function ExpandedCard({ card, heading, tools }: { card: SessionCard; heading: ReactNode; tools?: ReactNode }) {
   const id = card.sessionId
   const kind = card.kind ?? 'claude'
   const shell = kind === 'terminal'
@@ -101,6 +104,7 @@ export function ExpandedCard({ card, heading }: { card: SessionCard; heading: Re
       <header className="card-xhead">
         {heading}
         <div className="card-tools nodrag" onClick={stop} onDoubleClick={stop}>
+          {tools}
           {canResume && (
             <button
               className="card-tool is-labelled"

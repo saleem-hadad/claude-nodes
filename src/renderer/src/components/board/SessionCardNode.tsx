@@ -1,9 +1,10 @@
 import { memo, useCallback, useContext, useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { Handle, NodeResizer, Position, type Node, type NodeProps, type OnResizeEnd } from '@xyflow/react'
-import { GitBranch, GitMerge, Maximize2, MessageSquare, SquareTerminal } from 'lucide-react'
+import { Bot, GitBranch, GitMerge, Maximize2, MessageSquare, SquareTerminal } from 'lucide-react'
 import clsx from 'clsx'
 import type { SessionCard } from '@shared/types'
 import { cardTitle, isTerminal, tildePath, useApp } from '@renderer/store'
+import { AgentDeck, useDeck } from './AgentDeck'
 import { RenamingContext, useBoardActions } from './BoardContext'
 import { ExpandedCard } from './ExpandedCard'
 import { EXPANDED_MIN_H, EXPANDED_MIN_W, isExpanded, timeAgo } from './layout'
@@ -28,6 +29,7 @@ function SessionCardNodeComponent({ data, selected, dragging }: NodeProps<Sessio
   const renaming = useContext(RenamingContext) === card.sessionId
   const { expand } = useBoardActions()
   const patchCards = useApp((s) => s.patchCards)
+  const openAgents = useApp((s) => s.openAgents)
   const id = card.sessionId
   // Stable, so React Flow doesn't rebind the resize handles on every render.
   const onResizeEnd = useCallback<OnResizeEnd>(
@@ -43,6 +45,16 @@ function SessionCardNodeComponent({ data, selected, dragging }: NodeProps<Sessio
   const updated = meta?.updatedAt ?? card.createdAt
   const shell = isTerminal(card)
   const statusLabel = shell ? (card.live ? 'Running' : 'Exited') : STATUS_LABEL[card.status]
+
+  // The current run's agents make a deck behind the card.
+  const nodeRef = useRef<HTMLDivElement>(null)
+  const deck = useDeck(nodeRef)
+  const agents = !card.archived ? card.agents ?? [] : []
+  const hasDeck = agents.length > 0
+  const running = agents.filter((a) => a.status !== 'done').length
+  useEffect(() => {
+    if (dragging || !hasDeck) deck.close()
+  }, [dragging, hasDeck, deck.close])
 
   let preview: { text: string; kind: 'reply' | 'prompt' | 'empty' | 'path' }
   if (shell) preview = { text: repoPath ? tildePath(repoPath) : '', kind: 'path' }
@@ -88,17 +100,54 @@ function SessionCardNodeComponent({ data, selected, dragging }: NodeProps<Sessio
     </>
   )
 
+  // Points at the deck: pointing fans it out, a click pins it.
+  const deckTrigger = {
+    onPointerEnter: deck.point,
+    onClick: (e: MouseEvent) => {
+      e.stopPropagation()
+      deck.toggle()
+    },
+    onDoubleClick: stop,
+    'aria-expanded': deck.open,
+    title: running > 0 ? `${running} of ${agents.length} agents running` : `${agents.length} agents, all done`
+  }
+
+  const node = (body: ReactNode) => (
+    <div
+      ref={nodeRef}
+      className="session-node"
+      onPointerEnter={deck.open ? deck.stay : undefined}
+      onPointerLeave={deck.open ? deck.leave : undefined}
+    >
+      {hasDeck && <AgentDeck sessionId={id} agents={agents} total={card.agentCount ?? agents.length} deck={deck} />}
+      {body}
+    </div>
+  )
+
   if (isExpanded(card)) {
     return (
       <>
-        <div
-          className={clsx(className, 'is-expanded')}
-          data-status={card.status}
-          aria-label={`${title}, ${statusLabel}`}
-        >
-          {handles}
-          <ExpandedCard card={card} heading={heading} />
-        </div>
+        {node(
+          <div
+            className={clsx(className, 'is-expanded')}
+            data-status={card.status}
+            aria-label={`${title}, ${statusLabel}`}
+          >
+            {handles}
+            <ExpandedCard
+              card={card}
+              heading={heading}
+              tools={
+                hasDeck && (
+                  <button className="card-tool card-tool-agents" aria-label="Agents" {...deckTrigger}>
+                    <Bot size={14} strokeWidth={2} />
+                    {running > 0 && <span className="card-tool-badge">{running}</span>}
+                  </button>
+                )
+              }
+            />
+          </div>
+        )}
         <NodeResizer
           minWidth={EXPANDED_MIN_W}
           minHeight={EXPANDED_MIN_H}
@@ -110,7 +159,7 @@ function SessionCardNodeComponent({ data, selected, dragging }: NodeProps<Sessio
     )
   }
 
-  return (
+  return node(
     <div className={className} data-status={card.status} aria-label={`${title}, ${statusLabel}`}>
       {handles}
 
@@ -152,6 +201,32 @@ function SessionCardNodeComponent({ data, selected, dragging }: NodeProps<Sessio
             {meta.messageCount}
           </span>
         )}
+        {hasDeck ? (
+          <button className="card-foot-item card-foot-agents nodrag" {...deckTrigger}>
+            <Bot size={11} strokeWidth={2.2} />
+            {agents.length}
+            {running > 0 && (
+              <span className="card-foot-running">
+                <span className="status-dot is-small" data-status={agents.some((a) => a.status === 'waiting') ? 'waiting' : 'working'} />
+                {running}
+              </span>
+            )}
+          </button>
+        ) : !card.archived && card.agentCount ? (
+          // No run on now: the count opens the agents viewer, to look back at earlier ones.
+          <button
+            className="card-foot-item card-foot-agents nodrag"
+            onClick={(e) => {
+              e.stopPropagation()
+              openAgents(id)
+            }}
+            onDoubleClick={stop}
+            title={`${card.agentCount} ${card.agentCount === 1 ? 'agent' : 'agents'}: show what they did`}
+          >
+            <Bot size={11} strokeWidth={2.2} />
+            {card.agentCount}
+          </button>
+        ) : null}
         {shell && <span className="card-foot-item">{statusLabel}</span>}
         <span className="card-foot-item card-time">{timeAgo(updated)}</span>
       </footer>
