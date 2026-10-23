@@ -44,6 +44,16 @@ Status comes from hooks that the app adds for its own processes with `--settings
 
 Interrupting with Esc or Ctrl+C doesn't fire a hook, so the app watches for those keystrokes as well.
 
+Hooks that fire inside a subagent carry its `agent_id`. Those drive the agent's own status instead (`SubagentStart` and its tool hooks for working, `SubagentStop` for done), and a card reads as working or needing you while any of its agents does.
+
+## Agents
+
+When Claude starts agents with its Agent tool, Claude Code keeps each one's transcript beside the session's, in `<session id>/subagents/agent-<id>.jsonl`, with a `.meta.json` holding its type and the description Claude gave it. The app watches those files.
+
+The agents of the current run (still running, or finished since your last prompt) peek out from under the session's card as a deck, each layer in its status colour. Point at the deck, or the agent count in the card's footer (the 🤖 button in an expanded card's title bar), to fan the agents out beside the card with what each is doing. Click to pin the fan open. Click an agent for the agents viewer: every agent the session has started, with the selected one's task, tool calls and replies, updating while it works. Right-click a card and choose **Agents** to open the viewer for an archived session.
+
+An agent that ends its turn with a command still running in the background isn't done: the command wakes it again when it finishes, so it stays 🟠 meanwhile.
+
 ## Cards
 
 Cards are read from Claude Code's transcripts in `~/.claude/projects/<encoded-repo-path>/`. Titles use your custom title first, then Claude's generated title, then the first prompt. Parsing is incremental and cached, so large histories load quickly.
@@ -78,6 +88,7 @@ Transcripts stay where Claude Code keeps them. The app stores only the board lay
 | | Archive the selection | ⌫ |
 | | Search the archive | Hover the stack and type · Esc |
 | | Rename a card | Double-click its title |
+| | Fan out a card's agents | Point at the deck under it · click to pin |
 | | Pan · zoom | Two-finger scroll, Space-drag or middle-drag · pinch |
 | Terminal | Newline in Claude's prompt | ⇧Enter |
 | | Clear · copy · select all | ⌘K · ⌘C · ⌘A |
@@ -101,6 +112,7 @@ src/
   main/         Electron main process
     env.ts        login-shell environment and claude binary lookup
     discovery.ts  parses transcripts into card metadata and watches for changes
+    agents.ts     subagent transcripts: what each agent is doing, and its status
     board.ts      merges sessions on disk with the saved board; archive layout
     pty.ts        node-pty processes and the output buffer replayed into terminals
     hooks.ts      localhost hook server and the status machine
@@ -108,8 +120,8 @@ src/
     store.ts      state.json in the app's userData directory
   renderer/src/
     views/        ProjectsView (folders) and BoardView (canvas)
-    components/   title bar, folder icon, board cards, sections, archive stack, merge dialog, lineage edges
-    terminal/     xterm.js registry, TerminalModal, TranscriptPreview
+    components/   title bar, folder icon, board cards, agent decks, sections, archive stack, merge dialog, lineage edges
+    terminal/     xterm.js registry, TerminalModal, TranscriptPreview, AgentViewer
 ```
 
 Built with Electron, electron-vite, React, TypeScript, [React Flow](https://reactflow.dev), [xterm.js](https://xtermjs.org), [node-pty](https://github.com/microsoft/node-pty) and zustand.

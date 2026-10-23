@@ -1,6 +1,7 @@
 // Merges sessions found on disk with the stored board and lays out new ones.
 import fs from 'fs'
 import type { BoardNode, BoardSnapshot, Project, ProjectStats, Rect, SessionCard } from '@shared/types'
+import { attachAgents } from './agents'
 import { scanRepo, transcriptDir, transcriptPath, type DiscoveredSession } from './discovery'
 import { getStatus } from './hooks'
 import { isLive } from './pty'
@@ -104,7 +105,12 @@ export function loadBoard(project: Project): BoardSnapshot {
   project.openedAt = Date.now()
   save()
 
-  const cards = Object.values(board.nodes).map((node) => toCard(node, disk.get(node.sessionId)))
+  const cards = Object.values(board.nodes).map((node) => {
+    const found = disk.get(node.sessionId)
+    const card = toCard(node, found)
+    attachAgents(card, project.repoPath, found?.lastPromptAt)
+    return card
+  })
   const sections = Object.values(board.sections!).sort((a, b) => a.createdAt - b.createdAt)
   return { project, cards, archive: board.archive, sections, viewport: board.viewport }
 }

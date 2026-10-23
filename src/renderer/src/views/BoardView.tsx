@@ -28,6 +28,7 @@ import {
   Archive,
   AppWindowMac,
   ArchiveRestore,
+  Bot,
   Eye,
   Group,
   Loader2,
@@ -404,6 +405,7 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
   const setSelection = useApp((s) => s.setSelection)
   const openTerminal = useApp((s) => s.openTerminal)
   const openPreview = useApp((s) => s.openPreview)
+  const openAgents = useApp((s) => s.openAgents)
   const selection = useApp((s) => s.selection)
 
   const { cards, archive, sections } = board
@@ -1464,6 +1466,9 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
         ...(card.archived
           ? [{ label: 'Preview', icon: <Eye />, hint: '↩', onSelect: () => openPreview(card.sessionId) }]
           : cardOpenItems(card)),
+        ...(card.agentCount
+          ? [{ label: `Agents (${card.agentCount})`, icon: <Bot />, onSelect: () => openAgents(card.sessionId) }]
+          : []),
         { label: 'Rename', icon: <PencilLine />, onSelect: () => setRenaming(card.sessionId) },
         card.archived
           ? { label: 'Restore to board', icon: <ArchiveRestore />, onSelect: () => restoreCard(card.sessionId) }
@@ -1500,6 +1505,7 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
     },
     [
       openPreview,
+      openAgents,
       cardOpenItems,
       restoreCard,
       archiveCards,
@@ -1540,7 +1546,7 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const s = useApp.getState()
-      if (s.terminalSessionId || s.previewSessionId || s.diffOpen || overlayOpenRef.current) return
+      if (s.terminalSessionId || s.previewSessionId || s.agentView || s.diffOpen || overlayOpenRef.current) return
       const target = e.target as HTMLElement | null
       if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
       const sel = selectedIds()
@@ -1582,7 +1588,8 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
     }
     window.addEventListener('keydown', onKey)
     const offMenu = window.api.on.menu((command) => {
-      if (overlayOpenRef.current || useApp.getState().diffOpen) return
+      const s = useApp.getState()
+      if (overlayOpenRef.current || s.diffOpen || s.agentView) return
       if (command === 'new-session') latest.current.createSession()
       else if (command === 'new-terminal') latest.current.createTerminal()
     })

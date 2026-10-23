@@ -23,11 +23,14 @@ import type {
   SummaryResult,
   Viewport
 } from '@shared/types'
+import { hasPendingWork, readAgents } from './agents'
 import { hasTranscript, loadBoard, projectStats, toCard } from './board'
 import {
+  AGENT_ID,
   readSession,
   readTranscript,
   realRepoPath,
+  subagentsDir,
   transcriptPath,
   unwatchAll,
   unwatchProject,
@@ -93,7 +96,9 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
   })
   configureStatus({
     onChange: (sessionId, status, live) => send(IPC.evStatus, sessionId, status, live),
-    isLive: ptys.isLive
+    onAgentChange: (sessionId, agentId, status) => send(IPC.evAgentStatus, sessionId, agentId, status),
+    isLive: ptys.isLive,
+    hasPendingWork
   })
   installMenu((command) => send(IPC.evMenu, command))
 
@@ -436,6 +441,17 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
   ipcMain.handle(IPC.sessionTranscript, (_e, projectId: string, sessionId: string) => {
     const project = getProject(projectId)
     return readTranscript(transcriptPath(project.repoPath, sessionId))
+  })
+
+  ipcMain.handle(IPC.sessionAgents, (_e, projectId: string, sessionId: string) => {
+    return readAgents(getProject(projectId).repoPath, sessionId)
+  })
+
+  ipcMain.handle(IPC.sessionAgentTranscript, (_e, projectId: string, sessionId: string, agentId: string) => {
+    // Both ids end up in a path.
+    if (!AGENT_ID.test(agentId) || !AGENT_ID.test(sessionId)) throw new Error('Not an agent of this session')
+    const dir = subagentsDir(getProject(projectId).repoPath, sessionId)
+    return readTranscript(path.join(dir, `agent-${agentId}.jsonl`), { agent: true })
   })
 
   ipcMain.handle(

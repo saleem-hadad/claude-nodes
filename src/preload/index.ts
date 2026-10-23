@@ -61,7 +61,10 @@ const api: Api = {
     transcript: (projectId, sessionId) =>
       ipcRenderer.invoke(IPC.sessionTranscript, projectId, sessionId),
     summarize: (projectId, sessionIds, requestId) =>
-      ipcRenderer.invoke(IPC.sessionSummarize, projectId, sessionIds, requestId)
+      ipcRenderer.invoke(IPC.sessionSummarize, projectId, sessionIds, requestId),
+    agents: (projectId, sessionId) => ipcRenderer.invoke(IPC.sessionAgents, projectId, sessionId),
+    agentTranscript: (projectId, sessionId, agentId) =>
+      ipcRenderer.invoke(IPC.sessionAgentTranscript, projectId, sessionId, agentId)
   },
 
   git: {
@@ -73,6 +76,7 @@ const api: Api = {
     ptyData: (cb) => subscribe(IPC.evPtyData, cb),
     ptyExit: (cb) => subscribe(IPC.evPtyExit, cb),
     status: (cb) => subscribe(IPC.evStatus, cb),
+    agentStatus: (cb) => subscribe(IPC.evAgentStatus, cb),
     boardChanged: (cb) => subscribe(IPC.evBoardChanged, cb),
     summarizeProgress: (cb) => subscribe(IPC.evSummarizeProgress, cb),
     menu: (cb) => subscribe(IPC.evMenu, cb)

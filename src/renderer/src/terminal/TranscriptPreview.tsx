@@ -3,7 +3,7 @@ import { ArchiveRestore, X } from 'lucide-react'
 import { Modal } from '@renderer/components/Modal'
 import { cardTitle, useApp, useCard } from '@renderer/store'
 import { STACK_ROWS, stackZone } from '@renderer/components/board/layout'
-import type { BoardSnapshot, TranscriptMessage } from '@shared/types'
+import type { BoardSnapshot, ToolCall, TranscriptMessage } from '@shared/types'
 import './terminal.css'
 
 const CARD_W = 288
@@ -137,16 +137,17 @@ function PreviewPanel({ sessionId, projectId }: { sessionId: string; projectId: 
 const COLLAPSE_LINES = 12
 const COLLAPSE_CHARS = 1200
 
-function Message({ message }: { message: TranscriptMessage }) {
+/** One message of a transcript. `author` names who said it, when that isn't you and Claude. */
+export function Message({ message, author }: { message: TranscriptMessage; author?: string }) {
   const text = message.text.trim()
   const long = text.split('\n').length > COLLAPSE_LINES || text.length > COLLAPSE_CHARS
   const [expanded, setExpanded] = useState(false)
   const isUser = message.role === 'user'
 
   return (
-    <li className="tp-msg" data-role={message.role}>
+    <li className="tp-msg" data-role={message.role} data-notice={message.notice || undefined}>
       <div className="tp-msg-meta">
-        <span className="tp-msg-author">{isUser ? 'You' : 'Claude'}</span>
+        <span className="tp-msg-author">{author ?? (isUser ? 'You' : 'Claude')}</span>
         {message.timestamp > 0 && <time>{formatTime(message.timestamp)}</time>}
       </div>
       {text && (
@@ -161,7 +162,9 @@ function Message({ message }: { message: TranscriptMessage }) {
           )}
         </div>
       )}
-      {message.tools && message.tools.length > 0 && (
+      {message.calls ? (
+        <ToolCalls calls={message.calls} />
+      ) : message.tools && message.tools.length > 0 && (
         <div className="tp-tools">
           {message.tools.map((tool, i) => (
             <span key={i} className="tp-tool">
@@ -174,7 +177,31 @@ function Message({ message }: { message: TranscriptMessage }) {
   )
 }
 
-function Skeleton() {
+/** Calls shown from a long run until the rest are asked for. */
+const CALLS_SHOWN = 8
+
+/** Calls an agent made, oldest first, each with what it acted on. Long runs show their latest calls. */
+function ToolCalls({ calls }: { calls: ToolCall[] }) {
+  const [all, setAll] = useState(false)
+  const hidden = all ? 0 : Math.max(0, calls.length - CALLS_SHOWN)
+  return (
+    <div className="tp-calls">
+      {hidden > 0 && (
+        <button className="tp-more" onClick={() => setAll(true)}>
+          Show {hidden} earlier {hidden === 1 ? 'call' : 'calls'}
+        </button>
+      )}
+      {calls.slice(hidden).map((call, i) => (
+        <div key={hidden + i} className="tp-call">
+          <span className="tp-call-name">{call.name}</span>
+          {call.detail && <span className="tp-call-detail selectable">{call.detail}</span>}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+export function Skeleton() {
   return (
     <div className="tp-skeleton" aria-label="Loading transcript">
       {[72, 94, 58, 86, 40].map((w, i) => (
@@ -229,7 +256,7 @@ function formatRange(start: number, end: number) {
   return `${formatDay(start)} – ${formatDay(end)}`
 }
 
-function formatTime(ts: number) {
+export function formatTime(ts: number) {
   const isToday = new Date(ts).toDateString() === new Date().toDateString()
   return isToday ? timeFmt.format(ts) : `${formatDay(ts)}, ${timeFmt.format(ts)}`
 }

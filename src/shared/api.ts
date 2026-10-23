@@ -2,6 +2,7 @@
 // channel names it maps to. Main-process handlers in src/main/ipc.ts implement
 // exactly these channels.
 import type {
+  AgentInfo,
   AppInfo,
   AppSettings,
   BoardSection,
@@ -59,6 +60,8 @@ export const IPC = {
   sessionKill: 'session:kill',
   sessionTranscript: 'session:transcript',
   sessionSummarize: 'session:summarize',
+  sessionAgents: 'session:agents',
+  sessionAgentTranscript: 'session:agent-transcript',
 
   gitStatus: 'git:status',
   gitDiff: 'git:diff',
@@ -67,6 +70,7 @@ export const IPC = {
   evPtyData: 'ev:pty-data',
   evPtyExit: 'ev:pty-exit',
   evStatus: 'ev:status',
+  evAgentStatus: 'ev:agent-status',
   evBoardChanged: 'ev:board-changed',
   evSummarizeProgress: 'ev:summarize-progress',
   evMenu: 'ev:menu'
@@ -155,6 +159,10 @@ export interface Api {
     transcript(projectId: string, sessionId: string): Promise<TranscriptMessage[]>
     /** Asks a forked, non-persisted copy of each session to summarize itself. */
     summarize(projectId: string, sessionIds: string[], requestId: string): Promise<SummaryResult[]>
+    /** Every subagent the session has started, oldest first. */
+    agents(projectId: string, sessionId: string): Promise<AgentInfo[]>
+    /** A subagent's transcript, with what each of its tool calls acted on. */
+    agentTranscript(projectId: string, sessionId: string, agentId: string): Promise<TranscriptMessage[]>
   }
 
   git: {
@@ -168,6 +176,8 @@ export interface Api {
     ptyData(cb: (sessionId: string, data: string) => void): Unsubscribe
     ptyExit(cb: (sessionId: string, exitCode: number) => void): Unsubscribe
     status(cb: (sessionId: string, status: SessionStatus, live: boolean) => void): Unsubscribe
+    /** A subagent started working, needs the user, or finished. */
+    agentStatus(cb: (sessionId: string, agentId: string, status: SessionStatus) => void): Unsubscribe
     /** Transcripts or board state changed on disk; the renderer should reload the board. */
     boardChanged(cb: (projectId: string) => void): Unsubscribe
     summarizeProgress(cb: (progress: SummarizeProgress) => void): Unsubscribe
