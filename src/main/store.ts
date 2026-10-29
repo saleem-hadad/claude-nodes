@@ -8,6 +8,7 @@ import type {
   BoardNote,
   BoardSection,
   Project,
+  ProjectAction,
   ProjectGroup,
   Rect,
   Viewport
@@ -22,8 +23,7 @@ const THEMES: AppSettings['theme'][] = ['system', 'light', 'dark']
 export function normalizeSettings(raw: unknown): AppSettings {
   const s = (raw && typeof raw === 'object' ? raw : {}) as Partial<AppSettings>
   return {
-    theme: s.theme && THEMES.includes(s.theme) ? s.theme : 'system',
-    expandNewSessions: typeof s.expandNewSessions === 'boolean' ? s.expandNewSessions : true
+    theme: s.theme && THEMES.includes(s.theme) ? s.theme : 'system'
   }
 }
 
@@ -42,6 +42,8 @@ export interface State {
   groups: ProjectGroup[]
   boards: Record<string, BoardState>
   settings: AppSettings
+  /** Global actions, in every project's actions rail. A project's own are on the project. */
+  actions?: ProjectAction[]
 }
 
 let state: State = { projects: [], groups: [], boards: {}, settings: normalizeSettings(null) }
@@ -58,7 +60,8 @@ export function loadState() {
       projects: Array.isArray(raw.projects) ? raw.projects : [],
       groups: Array.isArray(raw.groups) ? raw.groups : [],
       boards: raw.boards && typeof raw.boards === 'object' ? raw.boards : {},
-      settings: normalizeSettings(raw.settings)
+      settings: normalizeSettings(raw.settings),
+      actions: Array.isArray(raw.actions) ? raw.actions : undefined
     }
   } catch {
     state = { projects: [], groups: [], boards: {}, settings: normalizeSettings(null) }

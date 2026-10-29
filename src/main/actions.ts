@@ -2,8 +2,8 @@
 //
 // Claude drafts each one from what the user describes, in a quick headless
 // call that may look around the repository (read-only) to fit the prompt to
-// it. A run is an ordinary session card started on the action's prompt, with
-// the board tools and the action's tool permissions; it leaves the board when
+// it. A run is an ordinary session started on the action's prompt, in auto
+// mode and with the board tools. It isn't drawn on the board, and goes when
 // its turn ends (see finishRun in ipc.ts).
 import { spawn } from 'child_process'
 import crypto from 'crypto'
@@ -16,9 +16,8 @@ const DRAFT_TIMEOUT_MS = 2 * 60 * 1000
 const MAX_NAME_CHARS = 40
 const MAX_DESCRIPTION_CHARS = 4000
 const MAX_PROMPT_CHARS = 20_000
-const MAX_RULES = 40
 
-const DRAFT_SYSTEM_PROMPT = `You design action buttons for Claude Nodes, a board of Claude Code sessions for one project. Pressing a button starts a fresh Claude Code session in the project's repository on the button's prompt. Nobody watches the session while it works, and it leaves the board when its turn ends, so the prompt has to stand on its own.
+const DRAFT_SYSTEM_PROMPT = `You design action buttons for Claude Nodes, a board of Claude Code sessions for one project. Pressing a button starts a fresh Claude Code session in the project's repository on the button's prompt. Nobody watches the session while it works, and it goes away when its turn ends, so the prompt has to stand on its own. It runs in auto mode: Claude Code approves routine steps by itself and blocks risky ones.
 
 Besides the usual tools (reading and editing files, running commands), a run has these board tools:
 - list_sessions: the board's sessions, with their status (working, waiting for the user, or done), whether they are archived, their section, Claude's last reply and when they were last active.
@@ -28,7 +27,6 @@ From the user's description, write:
 - name: 1 to 3 words in Title Case, for the button.
 - icon: the best fit from the list.
 - prompt: the run's instructions, addressed to the session ("you"). Say what to do, step by step: what to check first, when to stop without changing anything, and how to handle the likely failures. If the run may need the user to decide something, tell it to ask with AskUserQuestion. Don't add requirements the user didn't ask for.
-- allowedTools: Claude Code permission rules the run needs so it doesn't stop to ask, such as "Bash(git pull *)" or "Bash(npm test *)". File edits and the board tools are already allowed. Keep the rules as narrow as the job allows, and leave the list empty when nothing else is needed.
 
 You can read the repository to fit the prompt to it (for example, to find the real test command), but be quick about it.`
 
@@ -37,23 +35,16 @@ const DRAFT_SCHEMA = {
   properties: {
     name: { type: 'string' },
     icon: { type: 'string', enum: ACTION_ICONS },
-    prompt: { type: 'string' },
-    allowedTools: { type: 'array', items: { type: 'string' } }
+    prompt: { type: 'string' }
   },
-  required: ['name', 'icon', 'prompt', 'allowedTools'],
+  required: ['name', 'icon', 'prompt'],
   additionalProperties: false
 }
 
 const runSystemPrompt = (action: ProjectAction) =>
-  `You are running "${action.name}", an action button the user pressed on the Claude Nodes board for this project. Nobody is watching while you work, so do the job in the prompt without stopping to chat. If you need the user to decide something, ask with AskUserQuestion: that turns the session's card red to call them. When you are done, end with one line saying what you did. The user is shown that line, and this session then leaves the board. The mcp__claude-nodes__* tools let you list and archive the board's sessions.`
+  `You are running "${action.name}", an action button the user pressed on the Claude Nodes board for this project. Nobody is watching while you work, so do the job in the prompt without stopping to chat. If you need the user to decide something, ask with AskUserQuestion: that turns the action's button red to call them. When you are done, end with one line saying what you did. The user is shown that line, and this session then goes away. The mcp__claude-nodes__* tools let you list and archive the board's sessions.`
 
 const clip = (s: unknown, max: number) => (typeof s === 'string' ? s.trim().slice(0, max) : '')
-
-function cleanRules(rules: unknown): string[] {
-  if (!Array.isArray(rules)) return []
-  const out = rules.map((r) => clip(r, 200)).filter(Boolean)
-  return [...new Set(out)].slice(0, MAX_RULES)
-}
 
 /** An action from the renderer, checked and trimmed. Throws if it has no prompt. */
 export function normalizeAction(raw: Partial<ProjectAction>, existing?: ProjectAction): ProjectAction {
@@ -65,13 +56,17 @@ export function normalizeAction(raw: Partial<ProjectAction>, existing?: ProjectA
     icon: isActionIcon(raw.icon) ? raw.icon : DEFAULT_ACTION_ICON,
     description: clip(raw.description, MAX_DESCRIPTION_CHARS),
     prompt,
-    allowedTools: cleanRules(raw.allowedTools),
+    global: raw.global === true || undefined,
     createdAt: existing?.createdAt ?? Date.now()
   }
 }
 
-/** Asks Claude to turn a description into an action for the user to review. */
-export function draftAction(repoPath: string, description: string): Promise<ActionDraft> {
+/**
+ * Asks Claude to turn a description into an action for the user to review. A
+ * global action is pressed in every project, so its prompt can't lean on this
+ * repository's commands or layout.
+ */
+export function draftAction(repoPath: string, description: string, global: boolean): Promise<ActionDraft> {
   const what = clip(description, MAX_DESCRIPTION_CHARS)
   if (!what) return Promise.reject(new Error('Describe what the button should do'))
   const claude = requireClaude()
@@ -94,7 +89,9 @@ export function draftAction(repoPath: string, description: string): Promise<Acti
     'json',
     '--append-system-prompt',
     DRAFT_SYSTEM_PROMPT,
-    `Draft a button that does this:\n\n${what}`
+    global
+      ? `Draft a button that does this:\n\n${what}\n\nThe button is global: it shows in every project, so the prompt has to work in any repository. Don't rely on this one's commands, paths or tools; tell the run how to find them.`
+      : `Draft a button that does this:\n\n${what}`
   ]
   return new Promise((resolve, reject) => {
     // stdin is ignored, otherwise claude -p waits for piped input.
@@ -127,8 +124,7 @@ export function draftAction(repoPath: string, description: string): Promise<Acti
         resolve({
           name: clip(draft.name, MAX_NAME_CHARS) || 'Action',
           icon: isActionIcon(draft.icon) ? draft.icon : DEFAULT_ACTION_ICON,
-          prompt,
-          allowedTools: cleanRules(draft.allowedTools)
+          prompt
         })
         return
       }
@@ -142,9 +138,10 @@ export function draftAction(repoPath: string, description: string): Promise<Acti
 }
 
 /**
- * Extra `claude` arguments for a run: the board tools, the action's
- * permissions, and a note on how a run should behave. Both list options are
- * followed by another option, so neither swallows the prompt that comes last.
+ * Extra `claude` arguments for a run: the board tools, allowed outright so
+ * auto mode never weighs them, and a note on how a run should behave. Both
+ * list options are followed by another option, so neither swallows the
+ * prompt that comes last.
  */
 export async function runArgs(projectId: string, sessionId: string, action: ProjectAction): Promise<string[]> {
   const mcpConfig = await grantBoardTools(projectId, sessionId)
@@ -153,7 +150,6 @@ export async function runArgs(projectId: string, sessionId: string, action: Proj
     mcpConfig,
     '--allowedTools',
     ...BOARD_TOOL_RULES,
-    ...action.allowedTools,
     '--append-system-prompt',
     runSystemPrompt(action)
   ]

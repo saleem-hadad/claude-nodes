@@ -75,9 +75,11 @@ const api: Api = {
   },
 
   actions: {
+    global: () => ipcRenderer.invoke(IPC.actionsGlobal),
     save: (projectId, action) => ipcRenderer.invoke(IPC.actionsSave, projectId, action),
     remove: (projectId, actionId) => ipcRenderer.invoke(IPC.actionsRemove, projectId, actionId),
-    draft: (projectId, description) => ipcRenderer.invoke(IPC.actionsDraft, projectId, description)
+    draft: (projectId, description, global) =>
+      ipcRenderer.invoke(IPC.actionsDraft, projectId, description, global)
   },
 
   on: {

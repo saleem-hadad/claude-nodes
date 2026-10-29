@@ -36,6 +36,7 @@ import {
   Maximize2,
   Minimize2,
   PencilLine,
+  Play,
   Plus,
   Sparkles,
   SquareDashed,
@@ -110,7 +111,8 @@ import {
   noteObstacles,
   noteSize,
   notePadRect,
-  padSheetSpot
+  padSheetSpot,
+  splitNotes
 } from '@renderer/components/board/notes'
 import { SelectionBar } from '@renderer/components/board/SelectionBar'
 import { BoardControls } from '@renderer/components/board/BoardControls'
@@ -151,7 +153,7 @@ import {
 } from '@renderer/components/board/layout'
 import { wakeCardTerminal } from '@renderer/components/board/ExpandedCard'
 import { dispose as disposeTerminal, focus as focusTerminal } from '@renderer/terminal/registry'
-import { ActionsDock } from '@renderer/components/actions/ActionsDock'
+import { ActionRail } from '@renderer/components/actions/ActionRail'
 import { fuzzyMatch } from '@renderer/components/board/fuzzy'
 import '@renderer/components/board/board.css'
 
@@ -190,10 +192,18 @@ const sectionHue = (n: FlowNode) => FOLDER_HUES[(n as SectionFlowNode).data.sect
 const isDraft = (n: FlowNode) => n.type === 'note' && Boolean((n as NoteFlowNode).data.draft)
 /** A note's first line, for naming it in a dialog. */
 const noteExcerpt = (note: BoardNote) => truncate(note.text.trim().split('\n')[0], 60)
+/** A new card opens in its window, then stays expanded on the board once that closes. */
+const NEW_CARD_SIZE = cardSize({ archived: false, expanded: true })
 
 export function BoardView({ projectId }: { projectId: string }) {
-  const board = useApp((s) => s.board)
+  const snapshot = useApp((s) => s.board)
   const loading = useApp((s) => s.boardLoading)
+  // Action runs show beside their button in the actions rail, not on the board.
+  const board = useMemo(
+    () =>
+      snapshot?.cards.some((c) => c.runOf) ? { ...snapshot, cards: snapshot.cards.filter((c) => !c.runOf) } : snapshot,
+    [snapshot]
+  )
 
   if (!board || board.project.id !== projectId) {
     return (
@@ -212,6 +222,7 @@ export function BoardView({ projectId }: { projectId: string }) {
 
 const sameCard = (a: SessionCard, b: SessionCard) => a === b || JSON.stringify(a) === JSON.stringify(b)
 const sameList = (a?: number[], b?: number[]) => a === b || (a?.join() ?? '') === (b?.join() ?? '')
+const sameNotes = (a?: BoardNote[], b?: BoardNote[]) => a === b || JSON.stringify(a ?? []) === JSON.stringify(b ?? [])
 
 /** The archive stack as laid out for one render. */
 interface StackView {
@@ -288,11 +299,14 @@ function buildNodes(
   const band = stackResultsBand(board.archive)
   const depthOf = new Map(stack.pile.map((id, i) => [id, i]))
   const base = stack.raised ? RAISED_Z : 0
+  const { free: freeNotes, stuck } = splitNotes(board.notes, board.cards)
 
   const sessionNodes = board.cards.map((card): SessionFlowNode => {
     const id = card.sessionId
     const p = prevById.get(id) as SessionFlowNode | undefined
     const folded = card.archived
+    // An archived card keeps its sticker, out of sight until it's back on the board.
+    const stickers = folded ? undefined : stuck.get(id)
     const result = folded ? stack.results.get(id) : undefined
     const depth = depthOf.get(id) ?? 0
     const held = Boolean(p && (p.dragging || p.resizing || busy.has(id)))
@@ -381,10 +395,11 @@ function buildNodes(
         zIndex,
         draggable,
         selectable,
-        data: { card, match: result?.match }
+        data: { card, match: result?.match, stickers }
       }
     }
-    const dataSame = sameCard(p.data.card, card) && sameList(p.data.match, result?.match)
+    const dataSame =
+      sameCard(p.data.card, card) && sameList(p.data.match, result?.match) && sameNotes(p.data.stickers, stickers)
     const selected = selectable === false ? false : p.selected
     if (
       dataSame &&
@@ -414,13 +429,13 @@ function buildNodes(
       draggable,
       selectable,
       selected,
-      data: dataSame ? p.data : { card, match: result?.match }
+      data: dataSame ? p.data : { card, match: result?.match, stickers }
     }
   })
 
   const sectionNodes = buildSectionNodes(sectionViews(board.sections, board.cards), prevById, busy)
   const [padNode, draftNode] = buildPadNodes(notePadRect(board.archive), draftId, prevById, busy)
-  const noteNodes = buildNoteNodes(board.notes, prevById, busy)
+  const noteNodes = buildNoteNodes(freeNotes, prevById, busy)
   return [archiveNode, padNode, ...sectionNodes, ...sessionNodes, ...noteNodes, draftNode]
 }
 
@@ -489,7 +504,7 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
   const [toast, setToast] = useState<string | null>(null)
 
   const closeMenu = useCallback(() => setMenu(null), [])
-  // The Actions dock's dialog and menus, which the board's shortcuts must not reach behind.
+  // The actions rail's dialogs and menus, which the board's shortcuts must not reach behind.
   const [dockOverlay, setDockOverlay] = useState(false)
   const overlayOpen = Boolean(menu || confirmReq || merge || dockOverlay)
   const overlayOpenRef = useRef(overlayOpen)
@@ -827,11 +842,21 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
     [patchCards, ensureVisible]
   )
 
+  // Closing a session's window leaves its card expanded on the board, showing the terminal there.
+  const inModal = useApp((s) => s.terminalSessionId)
+  const lastInModal = useRef(inModal)
+  useEffect(() => {
+    const closed = lastInModal.current
+    lastInModal.current = inModal
+    const card = closed && closed !== inModal ? cardsRef.current.find((c) => c.sessionId === closed) : undefined
+    if (!card || card.archived || isExpanded(card)) return
+    patchCards([{ sessionId: card.sessionId, expanded: true }])
+    ensureVisible(card, cardSize({ ...card, expanded: true }))
+  }, [inModal, patchCards, ensureVisible])
+
   const createSession = useCallback(
     async (at?: Point, kind: SessionKind = 'claude', sectionId?: string) => {
-      // Started expanded, the card takes the terminal over when its window closes.
-      const { expandNewSessions: expanded } = await window.api.settings.get()
-      const size = cardSize({ archived: false, expanded })
+      const size = NEW_CARD_SIZE
       const all = cardsRef.current
       const dock = dockRef.current
       const spot = at
@@ -841,7 +866,7 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
       // A card started inside a section's frame joins it.
       const joins = sectionId ?? sectionAt(pos, groupsRef.current)
       try {
-        const card = await window.api.sessions.create(projectId, { ...pos, kind, expanded })
+        const card = await window.api.sessions.create(projectId, { ...pos, kind })
         upsertCard(card)
         if (joins) patchCards([{ sessionId: card.sessionId, sectionId: joins }])
         ensureVisible(pos, size)
@@ -1001,18 +1026,11 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
 
   // ---- actions ---------------------------------------------------------------
 
-  /** Each action's run on the board, by action id. */
-  const runs = useMemo(
-    () => new Map(cards.filter((c) => c.runOf && !c.archived).map((c) => [c.runOf!, c.sessionId])),
-    [cards]
-  )
-
-  /** Starts a run of `action`: a session on its prompt, in a section named after it. */
+  /** Starts a run of `action`: a session on its prompt, shown in the actions rail rather than here. */
   const runAction = useCallback(
     async (action: ProjectAction) => {
-      const all = cardsRef.current
-      const frames = groupsRef.current.map((g) => g.frame)
-      const spot = spotForNewSession(dockRef.current, all, CARD_SIZE, [...notesInTheWay(), ...frames])
+      // Where its card goes should the user take the run over.
+      const spot = spotForNewSession(dockRef.current, cardsRef.current, CARD_SIZE, notesInTheWay())
       try {
         const card = await window.api.sessions.create(projectId, {
           x: Math.round(spot.x),
@@ -1020,18 +1038,26 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
           actionId: action.id
         })
         upsertCard(card)
-        const others = cardObstacles(all.filter((c) => !c.archived))
-        const { frame, positions } = layoutGroup([card], others, [dockRef.current, ...frames, ...notesInTheWay()])
-        const section = addSection(frame, false)
-        saveSection({ ...section, name: action.name, run: card.sessionId })
-        patchCards([{ sessionId: card.sessionId, sectionId: section.id, ...positions.get(card.sessionId) }])
-        ensureVisible(frame, frame)
       } catch (err) {
         showToast(`Couldn't run ${action.name}: ${err instanceof Error ? err.message : String(err)}`)
       }
     },
-    [projectId, upsertCard, addSection, saveSection, patchCards, ensureVisible, showToast]
+    [projectId, upsertCard, showToast]
   )
+
+  // A run the user takes over joins the board at the spot kept for it, moved clear if that has filled since.
+  const runIds = useRef(new Set<string>())
+  useEffect(() => {
+    const joined = cards.filter((c) => runIds.current.has(c.sessionId))
+    runIds.current = new Set(useApp.getState().board?.cards.filter((c) => c.runOf).map((c) => c.sessionId))
+    for (const card of joined) {
+      const others = cardObstacles(cards.filter((c) => !c.archived), new Set([card.sessionId]))
+      const spot = findFreeSpot(card, [...others, ...notesInTheWay()], dockRef.current, cardSize(card))
+      const x = Math.round(spot.x)
+      const y = Math.round(spot.y)
+      if (x !== card.x || y !== card.y) patchCards([{ sessionId: card.sessionId, x, y }])
+    }
+  }, [cards, patchCards])
 
   // A finished run has already left the board; say what it did.
   useEffect(
@@ -1126,6 +1152,45 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
     [confirm, removeNotes]
   )
 
+  /** Notes whose session is starting, so a second click doesn't start another. */
+  const startingNotes = useRef(new Set<string>())
+
+  /**
+   * Starts a Claude session with a note's text as its first prompt. The card
+   * takes the note's place on the board and the note sticks to it. The session
+   * gets on with it on the board rather than opening in its window.
+   */
+  const startNote = useCallback(
+    async (noteId: string) => {
+      const note = notesRef.current.find((n) => n.id === noteId)
+      if (!note || note.sessionId || !note.text.trim() || startingNotes.current.has(noteId)) return
+      startingNotes.current.add(noteId)
+      const others = notesRef.current.filter((n) => n.id !== noteId)
+      const spot = findFreeSpot(
+        note,
+        [...cardObstacles(cardsRef.current), ...noteObstacles(others)],
+        dockRef.current,
+        NEW_CARD_SIZE
+      )
+      const pos = { x: Math.round(spot.x), y: Math.round(spot.y) }
+      const joins = sectionAt(pos, groupsRef.current)
+      try {
+        const card = await window.api.sessions.create(projectId, { ...pos, initialPrompt: note.text })
+        upsertCard(card)
+        if (joins) patchCards([{ sessionId: card.sessionId, sectionId: joins }])
+        // As it is now: it may have been moved or recoloured while the session started.
+        const latest = notesRef.current.find((n) => n.id === noteId)
+        if (latest) saveNote({ ...latest, sessionId: card.sessionId })
+        ensureVisible(pos, CARD_SIZE)
+      } catch (err) {
+        showToast(`Couldn't start a session: ${err instanceof Error ? err.message : String(err)}`)
+      } finally {
+        startingNotes.current.delete(noteId)
+      }
+    },
+    [projectId, upsertCard, patchCards, saveNote, ensureVisible, showToast]
+  )
+
   const selectCards = useCallback((ids: Set<string>) => {
     setNodes((nds) => nds.map((n) => (n.type === 'session' ? { ...n, selected: ids.has(n.id) } : n)))
   }, [])
@@ -1141,8 +1206,7 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
 
   const onMergeStart = useCallback(
     async ({ name, initialPrompt, parents }: MergeStartOptions) => {
-      const { expandNewSessions: expanded } = await window.api.settings.get()
-      const size = cardSize({ archived: false, expanded })
+      const size = NEW_CARD_SIZE
       const all = cardsRef.current
       const zone = dockRef.current
       const sourceIds = new Set((merge ?? []).map((s) => s.sessionId))
@@ -1169,8 +1233,7 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
         ...pos,
         name,
         initialPrompt,
-        parents,
-        expanded
+        parents
       })
       upsertCard(card)
       setMerge(null)
@@ -1195,9 +1258,10 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
         // Typing outlives a board closed mid-note (⌘W): save it all the same.
         if (useApp.getState().board?.project.id === projectId) saveNote(next)
         else window.api.board.saveNote(projectId, next)
-      }
+      },
+      startNote: (noteId) => void startNote(noteId)
     }),
-    [patchCards, saveSection, expandCards, saveNote, projectId]
+    [patchCards, saveSection, expandCards, saveNote, projectId, startNote]
   )
 
   // ---- React Flow handlers -------------------------------------------------
@@ -1504,7 +1568,8 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
   const fitActive = useCallback(
     (duration = 320) => {
       const active = cardsRef.current.filter((c) => !c.archived).map((c) => ({ id: c.sessionId }))
-      const notes = notesRef.current.map((n) => ({ id: n.id }))
+      // Stickers ride on their cards, which are fitted already.
+      const notes = notesRef.current.filter((n) => !n.sessionId).map((n) => ({ id: n.id }))
       if (active.length + notes.length > 0) {
         // Section frames too, so their headers aren't cut off.
         const frames = groupsRef.current.filter((g) => g.members.length > 0).map((g) => ({ id: g.section.id }))
@@ -1706,6 +1771,12 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
       return [
         { label: 'Edit', icon: <PencilLine />, hint: '↩', onSelect: () => setRenaming(note.id) },
         {
+          label: 'Start session',
+          icon: <Play />,
+          disabled: !note.text.trim(),
+          onSelect: () => startNote(note.id)
+        },
+        {
           custom: (
             <ColorSwatches
               value={note.color}
@@ -1727,7 +1798,7 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
         }
       ]
     },
-    [recolorNotes, deleteNotes]
+    [recolorNotes, deleteNotes, startNote]
   )
 
   const onNodeContextMenu = useCallback(
@@ -1783,6 +1854,15 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
         },
         ...cardSectionItems(card)
       ]
+      // The note it was started from, stuck on it. Its text lives on as the first prompt.
+      const stickers = (node as SessionFlowNode).data.stickers ?? []
+      if (stickers.length > 0) {
+        items.push({
+          label: stickers.length > 1 ? 'Delete its notes' : 'Delete its note',
+          icon: <StickyNote />,
+          onSelect: () => removeNotes(stickers.map((n) => n.id))
+        })
+      }
       items.push('separator', {
         label: 'Remove from board',
         icon: <Trash2 />,
@@ -1814,7 +1894,8 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
       sectionMenu,
       cardSectionItems,
       noteMenu,
-      noteBesidePad
+      noteBesidePad,
+      removeNotes
     ]
   )
 
@@ -2033,13 +2114,7 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
                     </div>
                   )}
 
-                  <ActionsDock
-                    project={board.project}
-                    runs={runs}
-                    onRun={runAction}
-                    onShowRun={openTerminal}
-                    onOverlayChange={setDockOverlay}
-                  />
+                  <ActionRail onRun={runAction} onOverlayChange={setDockOverlay} />
 
                   {selectedCards.length > 0 && !merge && (
                     <SelectionBar

@@ -35,7 +35,7 @@ type Step = 'describe' | 'review'
 
 /**
  * Adds or edits an action. The user describes what it should do, Claude
- * drafts the name, icon, prompt and permissions, and the user reviews them.
+ * drafts the name, icon and prompt, and the user reviews them.
  */
 export function ActionDialog({
   projectId,
@@ -52,7 +52,7 @@ export function ActionDialog({
   const [name, setName] = useState(action?.name ?? '')
   const [icon, setIcon] = useState(action?.icon ?? DEFAULT_ACTION_ICON)
   const [prompt, setPrompt] = useState(action?.prompt ?? '')
-  const [rules, setRules] = useState(action?.allowedTools.join('\n') ?? '')
+  const [global, setGlobal] = useState(action?.global ?? false)
   const [drafting, setDrafting] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -68,12 +68,11 @@ export function ActionDialog({
     setDrafting(true)
     setError(null)
     try {
-      const d: ActionDraft = await window.api.actions.draft(projectId, what)
+      const d: ActionDraft = await window.api.actions.draft(projectId, what, global)
       if (request.current !== id) return
       setName(d.name)
       setIcon(d.icon)
       setPrompt(d.prompt)
-      setRules(d.allowedTools.join('\n'))
       setStep('review')
     } catch (err) {
       if (request.current === id) setError(`Claude couldn’t draft it: ${err instanceof Error ? err.message : String(err)}`)
@@ -93,10 +92,7 @@ export function ActionDialog({
         icon,
         description: description.trim(),
         prompt: prompt.trim(),
-        allowedTools: rules
-          .split('\n')
-          .map((r) => r.trim())
-          .filter(Boolean),
+        global: global || undefined,
         createdAt: action?.createdAt ?? Date.now()
       })
       onClose()
@@ -105,6 +101,27 @@ export function ActionDialog({
       setSaving(false)
     }
   }
+
+  const scope = (
+    <label className="action-scope">
+      <span className="action-scope-text">
+        <span className="action-scope-title">Use in every project</span>
+        <span className="action-scope-hint">
+          {global
+            ? 'A global button, in the actions rail of all your projects. Claude writes its prompt to work in any repository.'
+            : 'Only this project has it.'}
+        </span>
+      </span>
+      <input
+        type="checkbox"
+        role="switch"
+        className="action-switch"
+        checked={global}
+        disabled={drafting || saving}
+        onChange={(e) => setGlobal(e.target.checked)}
+      />
+    </label>
+  )
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key !== 'Enter' || !e.metaKey) return
@@ -127,7 +144,7 @@ export function ActionDialog({
             <p className="action-subtitle">
               {step === 'describe'
                 ? 'Say what the button should do. Claude writes the prompt each press runs.'
-                : 'Each press starts a session on this prompt in its own section. It leaves the board when it’s done.'}
+                : 'Each press runs a session on this prompt in auto mode, beside its button. It goes when it’s done.'}
             </p>
           </div>
         </header>
@@ -159,6 +176,7 @@ export function ActionDialog({
                 ))}
               </div>
             </div>
+            {scope}
           </div>
         ) : (
           <div className="action-body">
@@ -201,21 +219,7 @@ export function ActionDialog({
                 onChange={(e) => setPrompt(e.target.value)}
               />
             </label>
-            <label className="action-field">
-              <span className="action-label">Allowed without asking</span>
-              <textarea
-                className="action-input action-rules"
-                value={rules}
-                onChange={(e) => setRules(e.target.value)}
-                placeholder="Bash(git pull *)"
-                rows={3}
-                spellCheck={false}
-              />
-              <span className="action-hint">
-                Permission rules, one per line. File edits and the board tools are always allowed. Anything else
-                stops the run to ask you.
-              </span>
-            </label>
+            {scope}
           </div>
         )}
 

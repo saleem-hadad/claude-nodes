@@ -1,5 +1,6 @@
-import { memo, useCallback, useContext, useEffect, useRef, useState, type CSSProperties } from 'react'
+import { memo, useCallback, useContext, useEffect, useRef, useState, type CSSProperties, type MouseEvent } from 'react'
 import { NodeResizer, type Node, type NodeProps, type OnResizeEnd } from '@xyflow/react'
+import { Play, X } from 'lucide-react'
 import clsx from 'clsx'
 import type { BoardNote } from '@shared/types'
 import { useApp } from '@renderer/store'
@@ -17,9 +18,12 @@ export type NoteFlowNode = Node<NoteNodeData, 'note'>
 /** How long typing rests before it's saved, so a note is never lost to a closed board. */
 const SAVE_DELAY_MS = 500
 
+const stop = (e: MouseEvent) => e.stopPropagation()
+
 function NoteNodeComponent({ id, data, selected, dragging }: NodeProps<NoteFlowNode>) {
   const { note, draft } = data
   const editing = useContext(RenamingContext) === id && !draft
+  const { startNote } = useBoardActions()
   const saveNote = useApp((s) => s.saveNote)
   const noteRef = useRef(note)
   noteRef.current = note
@@ -55,6 +59,20 @@ function NoteNodeComponent({ id, data, selected, dragging }: NodeProps<NoteFlowN
           <p className={clsx('note-text', !note.text && 'is-empty')}>
             {note.text || (draft ? '' : 'Double-click to write')}
           </p>
+        )}
+        {!draft && !editing && note.text.trim() && (
+          <button
+            className="note-play nodrag"
+            onClick={(e) => {
+              e.stopPropagation()
+              startNote(note.id)
+            }}
+            onDoubleClick={stop}
+            title="Start a Claude session on this note"
+            aria-label="Start a Claude session on this note"
+          >
+            <Play size={12} strokeWidth={2.5} fill="currentColor" />
+          </button>
         )}
       </div>
       {!draft && (
@@ -134,3 +152,34 @@ function NoteEditor({ note }: { note: BoardNote }) {
 }
 
 export const NoteNode = memo(NoteNodeComponent)
+
+/**
+ * A note stuck on the card of the session it started, as a reminder of what
+ * was asked. `landing` plays it sticking on, for a session just started.
+ */
+export function NoteSticker({ note, index, landing }: { note: BoardNote; index: number; landing: boolean }) {
+  const removeNotes = useApp((s) => s.removeNotes)
+
+  return (
+    <div
+      className={clsx('note-sticker', landing && 'is-landing')}
+      style={{ '--note-hue': FOLDER_HUES[note.color].frontTop, '--i': index } as CSSProperties}
+      title={note.text}
+    >
+      <p className="note-sticker-text">{note.text}</p>
+      <button
+        className="note-sticker-remove nodrag"
+        // Nothing to lose: the note's text is the session's first prompt.
+        onClick={(e) => {
+          e.stopPropagation()
+          removeNotes([note.id])
+        }}
+        onDoubleClick={stop}
+        title="Delete note"
+        aria-label="Delete note"
+      >
+        <X size={9} strokeWidth={3} />
+      </button>
+    </div>
+  )
+}

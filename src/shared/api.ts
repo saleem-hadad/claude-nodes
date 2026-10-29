@@ -3,6 +3,7 @@
 // exactly these channels.
 import type {
   ActionDraft,
+  ActionLists,
   ActionRunResult,
   AgentInfo,
   AppInfo,
@@ -73,6 +74,7 @@ export const IPC = {
   gitStatus: 'git:status',
   gitDiff: 'git:diff',
 
+  actionsGlobal: 'actions:global',
   actionsSave: 'actions:save',
   actionsRemove: 'actions:remove',
   actionsDraft: 'actions:draft',
@@ -190,11 +192,17 @@ export interface Api {
 
   /** The Actions dock. An action runs through sessions.create with its actionId. */
   actions: {
-    /** Adds an action to the project, or replaces the one with its id. Resolves with the project. */
-    save(projectId: string, action: ProjectAction): Promise<Project>
-    remove(projectId: string, actionId: string): Promise<Project>
-    /** Asks Claude to turn a description into a name, icon, prompt and tool permissions. */
-    draft(projectId: string, description: string): Promise<ActionDraft>
+    /** The global actions, shown in every project. */
+    global(): Promise<ProjectAction[]>
+    /**
+     * Adds an action, or replaces the one with its id: to the project, or app-wide
+     * when it is global. One that changed scope moves from the other list.
+     */
+    save(projectId: string, action: ProjectAction): Promise<ActionLists>
+    /** Deletes one of the project's actions, or a global one, from every project. */
+    remove(projectId: string, actionId: string): Promise<ActionLists>
+    /** Asks Claude to turn a description into a name, icon and prompt. A global one fits any repository. */
+    draft(projectId: string, description: string, global: boolean): Promise<ActionDraft>
   }
 
   on: {

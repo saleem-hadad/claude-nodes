@@ -1362,6 +1362,121 @@ kbd {
   background: var(--bg-elevated);
 }
 
+/* A note with writing on it starts a session from the play button in its corner. */
+.note-play {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  /* Nudged right, so the triangle looks centred. */
+  padding: 0 0 0 2px;
+  border: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--note-ink) 80%, transparent);
+  color: color-mix(in srgb, var(--note-hue) 72%, var(--note-paper));
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  transform: scale(0.85);
+  cursor: default;
+  transition:
+    opacity var(--dur-fast) ease,
+    transform var(--dur-med) var(--ease-spring),
+    background var(--dur-fast) ease;
+}
+.react-flow__node-note:hover .note-play {
+  opacity: 1;
+  transform: none;
+}
+.react-flow__node-note .note.is-dragging .note-play {
+  opacity: 0;
+}
+.note-play:hover {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+.note-play:active {
+  transform: scale(0.92);
+}
+
+/* ---------------------------------------------------------- note stickers */
+
+/* The note a session was started from, stuck along the top of its card near
+   the corner, clear of the card's own controls. */
+.note-sticker {
+  position: absolute;
+  right: calc(18px + var(--i, 0) * 30px);
+  bottom: calc(100% - 6px);
+  z-index: 2;
+  width: 84px;
+  height: 54px;
+  padding: 6px 8px;
+  border-radius: 3px;
+  background:
+    linear-gradient(rgba(0, 0, 0, 0.04), transparent 10px),
+    color-mix(in srgb, var(--note-hue) 72%, var(--note-paper));
+  box-shadow: var(--note-shadow);
+  color: var(--note-ink);
+  transform: rotate(3deg);
+  transform-origin: 50% 100%;
+  transition:
+    transform var(--dur-med) var(--ease-out),
+    box-shadow var(--dur-med) var(--ease-out);
+}
+.note-sticker:hover {
+  transform: rotate(1deg) translateY(-2px);
+  box-shadow: var(--note-shadow-lifted);
+}
+.note-sticker-text {
+  margin: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  font-size: var(--text-xs);
+  line-height: 1.25;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: none;
+}
+.note-sticker-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--note-ink);
+  color: var(--note-paper);
+  opacity: 0;
+  cursor: default;
+  transition: opacity var(--dur-fast) ease;
+}
+.note-sticker:hover .note-sticker-remove {
+  opacity: 1;
+}
+/* A session just started from the note: it sticks on. */
+.note-sticker.is-landing {
+  animation: sticker-land 520ms var(--ease-spring) backwards;
+}
+@keyframes sticker-land {
+  from {
+    transform: translateY(-14px) rotate(-6deg) scale(1.35);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .note-sticker.is-landing {
+    animation: none;
+  }
+}
+
 /* --------------------------------------------------------------- note pad */
 
 /* A frame under the archive, styled like it, holding a pad of notes. Its top

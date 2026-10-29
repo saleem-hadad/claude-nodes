@@ -69,6 +69,8 @@ Each board has a pad of sticky notes under the archive, and it moves with the ar
 
 Notes sit on top of cards. They don't join sections or the archive: a note dropped on the archive or the pad goes back where it was.
 
+Point at a note with writing on it and press ▶ in its corner (or right-click it and choose **Start session**) to start a Claude session with the note's text as its first prompt, and nothing added. The card takes the note's place and gets to work there, without opening its window. The note then rides on the card as a sticker, a reminder of what was asked: point at it to read all of it, and press its × to delete it. That doesn't ask first, since the text lives on as the session's first prompt. An archived card keeps its sticker out of sight until it's restored. A card removed from the board drops its note back onto the board where the card was.
+
 ## Cards
 
 Cards are read from Claude Code's transcripts in `~/.claude/projects/<encoded-repo-path>/`. Titles use your custom title first, then Claude's generated title, then the first prompt. Parsing is incremental and cached, so large histories load quickly.
@@ -81,15 +83,17 @@ This makes one Claude request per selected session, so it counts toward your Cla
 
 ## Actions
 
-The Actions dock on the board's right edge holds a project's buttons. A project starts with none. **Add action** asks what the button should do, with a few examples to start from. Claude (`claude -p`, Sonnet, able to read the repo but not change it) drafts a name, an icon, the prompt each press runs, and the permission rules it needs, such as `Bash(git pull *)`. You review and edit all four before saving. Actions are stored with the project in `state.json`, not in the repo.
+A project's buttons live in a rail on the board's right edge. It hides like the project rail on the left: point at the window's right edge to slide it in. A project starts with none. The **+** button asks what a new one should do, with a few examples to start from. Claude (`claude -p`, Sonnet, able to read the repo but not change it) drafts a name, an icon and the prompt each press runs, and you review and edit them before saving. Right-click a button to run, edit or delete it.
 
-Pressing a button starts an ordinary session card on the action's prompt, in a section named after it. The run gets:
+Turn on **Use in every project** to make a button global: it shows in every project's rail, below that project's own buttons, with a globe on its tile. Claude then writes its prompt to work in any repository, finding commands at run time rather than assuming this one's. Turning the switch off moves the button into the project you're in. A project's buttons are stored with it in `state.json`, global ones at the top level of the same file, and never in the repo.
 
-- the action's permission rules through `--allowedTools`. Anything else stops the run to ask you, and its card turns 🔴.
+Pressing a button starts a session on the action's prompt. It isn't drawn on the board. Its button turns orange, and while the rail is out the session fans out beside it with what it's doing, so you can click to open it. While the rail is hidden, a sliver on the right edge shows a run is going, and turns red when one needs you. The run gets:
+
+- `--permission-mode auto`, so it never stops to ask permission: Claude Code approves routine steps itself and blocks risky ones.
 - the board tools, through `--mcp-config`: `list_sessions` and `archive_sessions`. They're served by the app on 127.0.0.1, with a token for each run that covers only its own project. The token sits in a file only you can read (`runs/` in the app's data folder), so it never shows up in a process listing.
 - a note asking it to work without stopping to chat, to ask with AskUserQuestion when it needs you, and to end with a one-line summary.
 
-When the run's turn ends, its card and section leave the board, its transcript is hidden like a removed card's, and the summary shows as a notice. If you type into a run, or interrupt it with Esc or Ctrl+C, it becomes yours: it stays on the board as an ordinary session, and loses its board tools. Answering a question it asked doesn't count. While a run is on the board, pressing its button again opens it rather than starting another.
+When the run's turn ends, the session goes, its transcript is hidden like a removed card's, and the summary shows as a notice. If you type into a run, or interrupt it with Esc or Ctrl+C, it becomes yours: it joins the board as an ordinary session, and loses its board tools. Answering a question it asked doesn't count. While a run is going, pressing its button opens it rather than starting another.
 
 ## Your data
 
@@ -120,6 +124,7 @@ The session host keeps its socket and log in the `host` folder next to it. Only 
 | | Rename a card | Double-click its title |
 | | New note | Drag one off the pad under the archive · click the pad · right-click › New note here |
 | | Write in a note | Double-click it · Enter |
+| | Start a session from a note | Its ▶ button · right-click › Start session |
 | | Delete the selected notes | ⌫ |
 | | Fan out a card's agents | Point at the deck under it · click to pin |
 | | Pan · zoom | Two-finger scroll, Space-drag or middle-drag · pinch |
@@ -153,7 +158,7 @@ src/
     hostProtocol.ts  messages between the two over a Unix socket
     hooks.ts      the status machine, driven by hooks the session host passes on
     summarize.ts  forked, non-persisted handoff summaries
-    actions.ts    the Actions dock's buttons: drafting them with Claude, and each run's extra claude options
+    actions.ts    the actions rail's buttons: drafting them with Claude, and each run's extra claude options
     boardTools.ts the MCP server that lets an action run list and archive the board's sessions
     store.ts      state.json in the app's userData directory
   renderer/src/

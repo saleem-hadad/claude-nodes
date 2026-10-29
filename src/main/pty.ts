@@ -58,6 +58,8 @@ export interface SpawnOptions {
   resume: boolean
   name?: string
   initialPrompt?: string
+  /** Defaults to acceptEdits. Action runs use auto, so they never stop to ask. */
+  permissionMode?: 'acceptEdits' | 'auto'
   /** More `claude` options, such as an action run's tools. A terminal ignores them. */
   extraArgs?: string[]
   cols?: number
@@ -326,7 +328,7 @@ function commandFor(opts: SpawnOptions): { file: string; args: string[]; env: Re
 
   const args = opts.resume ? ['--resume', opts.sessionId] : ['--session-id', opts.sessionId]
   if (opts.name) args.push('--name', opts.name)
-  args.push('--permission-mode', 'acceptEdits')
+  args.push('--permission-mode', opts.permissionMode ?? 'acceptEdits')
   if (opts.extraArgs) args.push(...opts.extraArgs)
   args.push('--settings', hookSettings())
   if (opts.initialPrompt) args.push(opts.initialPrompt)

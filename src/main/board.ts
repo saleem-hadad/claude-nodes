@@ -83,6 +83,18 @@ function importSessions(board: BoardState, sessions: DiscoveredSession[]) {
   }
 }
 
+/**
+ * A note stuck on a card that leaves the board falls off it: onto the board
+ * where the card was, or, from an archived card, back where the note was.
+ */
+export function unstickNotes(board: BoardState, node: BoardNode) {
+  for (const note of Object.values(board.notes!)) {
+    if (note.sessionId !== node.sessionId) continue
+    delete note.sessionId
+    if (!node.archived) Object.assign(note, { x: node.x, y: node.y })
+  }
+}
+
 export function toCard(node: BoardNode, found?: DiscoveredSession): SessionCard {
   const live = isLive(node.sessionId)
   return {
@@ -116,6 +128,10 @@ export function loadBoard(project: Project): BoardSnapshot {
   // Only active cards belong to a section, and only to one that still exists.
   for (const node of Object.values(board.nodes)) {
     if (node.sectionId && (node.archived || !board.sections![node.sectionId])) delete node.sectionId
+  }
+  // A note whose card left the board some other way stays where it was.
+  for (const note of Object.values(board.notes!)) {
+    if (note.sessionId && !board.nodes[note.sessionId]) delete note.sessionId
   }
 
   project.openedAt = Date.now()

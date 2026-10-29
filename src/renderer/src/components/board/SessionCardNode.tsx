@@ -2,18 +2,24 @@ import { memo, useCallback, useContext, useEffect, useRef, useState, type MouseE
 import { Handle, NodeResizer, Position, type Node, type NodeProps, type OnResizeEnd } from '@xyflow/react'
 import { Bot, GitBranch, GitMerge, Maximize2, MessageSquare, SquareTerminal } from 'lucide-react'
 import clsx from 'clsx'
-import type { SessionCard } from '@shared/types'
+import type { BoardNote, SessionCard } from '@shared/types'
 import { cardTitle, isTerminal, tildePath, useApp } from '@renderer/store'
 import { AgentDeck, useDeck } from './AgentDeck'
 import { RenamingContext, useBoardActions } from './BoardContext'
 import { ExpandedCard } from './ExpandedCard'
 import { EXPANDED_MIN_H, EXPANDED_MIN_W, isExpanded, timeAgo } from './layout'
+import { NoteSticker } from './NoteNode'
 
 export type SessionNodeData = {
   card: SessionCard
   /** Title characters matched by the archive search, highlighted. */
   match?: number[]
+  /** Notes the session was started from, stuck on the card. Active cards only. */
+  stickers?: BoardNote[]
 }
+
+/** A sticker plays landing on a card this new: one just started from its note. */
+const LANDING_MS = 4000
 export type SessionFlowNode = Node<SessionNodeData, 'session'>
 
 const STATUS_LABEL = {
@@ -121,6 +127,9 @@ function SessionCardNodeComponent({ data, selected, dragging }: NodeProps<Sessio
     >
       {hasDeck && <AgentDeck sessionId={id} agents={agents} total={card.agentCount ?? agents.length} deck={deck} />}
       {body}
+      {data.stickers?.map((note, i) => (
+        <NoteSticker key={note.id} note={note} index={i} landing={Date.now() - card.createdAt < LANDING_MS} />
+      ))}
     </div>
   )
 

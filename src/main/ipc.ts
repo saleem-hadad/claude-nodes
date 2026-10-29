@@ -5,6 +5,7 @@ import fs from 'fs'
 import path from 'path'
 import { IPC } from '@shared/api'
 import type {
+  ActionLists,
   ActionRunResult,
   AppInfo,
   AppSettings,
@@ -28,7 +29,7 @@ import type {
 } from '@shared/types'
 import { draftAction, normalizeAction, runArgs } from './actions'
 import { hasPendingWork, readAgents } from './agents'
-import { archiveNode, hasTranscript, loadBoard, projectStats, toCard } from './board'
+import { archiveNode, hasTranscript, loadBoard, projectStats, toCard, unstickNotes } from './board'
 import { revokeBoardTools, startBoardTools } from './boardTools'
 import {
   AGENT_ID,
@@ -76,6 +77,11 @@ function isTakeover(sessionId: string, data: string): boolean {
   return /[^\x00-\x1f\x7f]|\r/.test(typed)
 }
 
+/** One of the project's own actions, or a global one. */
+function findAction(project: Project, actionId: string): ProjectAction | undefined {
+  return [...(project.actions ?? []), ...(getState().actions ?? [])].find((a) => a.id === actionId)
+}
+
 const FOLDER_COLORS: FolderColor[] = ['blue', 'purple', 'pink', 'red', 'orange', 'yellow', 'green', 'graphite']
 
 /** A random folder colour, favouring the ones fewest projects use so neighbours tend to differ. */
@@ -119,9 +125,9 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
     onExit: (sessionId, exitCode) => send(IPC.evPtyExit, sessionId, exitCode)
   })
   /**
-   * An action run whose turn has ended leaves the board: its card, its section,
-   * and its transcript, which is hidden like a removed card's. The renderer is
-   * told what Claude said last, which the prompt asks to be a one-line summary.
+   * An action run whose turn has ended is removed, and its transcript hidden
+   * like a removed card's. The renderer is told what Claude said last, which
+   * the prompt asks to be a one-line summary.
    */
   const finishRun = (sessionId: string) => {
     const projectId = projectIdForSession(sessionId)
@@ -129,14 +135,11 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
     const node = board?.nodes[sessionId]
     if (!projectId || !board || !node?.runOf) return
     const project = getProject(projectId)
-    const action = project.actions?.find((a) => a.id === node.runOf)
+    const action = findAction(project, node.runOf)
     const meta = readSession(sessionId, transcriptPath(project.repoPath, sessionId))?.meta
 
     delete board.nodes[sessionId]
     if (!board.hidden!.includes(sessionId)) board.hidden!.push(sessionId)
-    for (const section of Object.values(board.sections!)) {
-      if (section.run === sessionId) delete board.sections![section.id]
-    }
     save()
     revokeBoardTools(sessionId)
     void ptys.kill(sessionId).then(() => forgetStatus(sessionId))
@@ -150,14 +153,13 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
     send(IPC.evBoardChanged, projectId)
   }
 
-  /** A run the user typed into or interrupted is theirs: it stays on the board as an ordinary session. */
+  /** A run the user typed into or interrupted is theirs: it joins the board as an ordinary session. */
   const claimRun = (sessionId: string) => {
     const projectId = projectIdForSession(sessionId)
     const board = projectId ? getBoard(projectId) : undefined
     const node = board?.nodes[sessionId]
     if (!projectId || !board || !node?.runOf) return
     delete node.runOf
-    for (const section of Object.values(board.sections!)) if (section.run === sessionId) delete section.run
     save()
     revokeBoardTools(sessionId)
     send(IPC.evBoardChanged, projectId)
@@ -376,8 +378,6 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
       color: FOLDER_COLORS.includes(section.color) ? section.color : 'blue',
       x: section.x,
       y: section.y,
-      // Only a run's own session can be the one it holds.
-      run: typeof section.run === 'string' && board.nodes[section.run]?.runOf ? section.run : undefined,
       createdAt: board.sections![section.id]?.createdAt ?? Date.now()
     }
     save()
@@ -421,6 +421,8 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
       y: Math.round(note.y),
       w: Number.isFinite(note.w) ? clampNoteSize(note.w!) : undefined,
       h: Number.isFinite(note.h) ? clampNoteSize(note.h!) : undefined,
+      // Only a card on this board can wear it.
+      sessionId: typeof note.sessionId === 'string' && board.nodes[note.sessionId] ? note.sessionId : undefined,
       createdAt: board.notes![note.id]?.createdAt ?? Date.now()
     }
     save()
@@ -445,6 +447,7 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
   ipcMain.handle(IPC.boardRemoveNode, async (_e, projectId: string, sessionId: string) => {
     const board = getBoard(projectId)
     const isTerminal = board.nodes[sessionId]?.kind === 'terminal'
+    if (board.nodes[sessionId]) unstickNotes(board, board.nodes[sessionId])
     delete board.nodes[sessionId]
     // Terminals are never discovered on disk, so there is nothing to hide.
     if (!isTerminal && !board.hidden!.includes(sessionId)) board.hidden!.push(sessionId)
@@ -468,27 +471,44 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
 
   // --- Actions -------------------------------------------------------------
 
-  ipcMain.handle(IPC.actionsSave, (_e, projectId: string, raw: ProjectAction): Project => {
-    const project = getProject(projectId)
-    const actions = project.actions ?? []
-    const i = actions.findIndex((a) => a.id === raw?.id)
-    const action = normalizeAction(raw ?? {}, i >= 0 ? actions[i] : undefined)
-    project.actions = i >= 0 ? actions.map((a, j) => (j === i ? action : a)) : [...actions, action]
+  /** Stores a project's actions and the global ones, leaving out lists that are empty. */
+  const setActions = (project: Project, own: ProjectAction[], global: ProjectAction[]): ActionLists => {
+    const state = getState()
+    if (own.length) project.actions = own
+    else delete project.actions
+    if (global.length) state.actions = global
+    else delete state.actions
     save()
-    return project
+    return { project, global }
+  }
+
+  ipcMain.handle(IPC.actionsGlobal, (): ProjectAction[] => getState().actions ?? [])
+
+  ipcMain.handle(IPC.actionsSave, (_e, projectId: string, raw: ProjectAction): ActionLists => {
+    const project = getProject(projectId)
+    const own = project.actions ?? []
+    const global = getState().actions ?? []
+    const existing = [...own, ...global].find((a) => a.id === raw?.id)
+    const action = normalizeAction(raw ?? {}, existing)
+    // Into the list its scope says, in place if it was there already; out of the other one.
+    const put = (list: ProjectAction[], belongs: boolean) =>
+      !belongs
+        ? list.filter((a) => a.id !== action.id)
+        : list.some((a) => a.id === action.id)
+          ? list.map((a) => (a.id === action.id ? action : a))
+          : [...list, action]
+    return setActions(project, put(own, !action.global), put(global, Boolean(action.global)))
   })
 
-  ipcMain.handle(IPC.actionsRemove, (_e, projectId: string, actionId: string): Project => {
+  ipcMain.handle(IPC.actionsRemove, (_e, projectId: string, actionId: string): ActionLists => {
     const project = getProject(projectId)
-    project.actions = (project.actions ?? []).filter((a) => a.id !== actionId)
-    if (project.actions.length === 0) delete project.actions
-    save()
-    return project
+    const drop = (list: ProjectAction[] = []) => list.filter((a) => a.id !== actionId)
+    return setActions(project, drop(project.actions), drop(getState().actions))
   })
 
-  ipcMain.handle(IPC.actionsDraft, async (_e, projectId: string, description: string) => {
+  ipcMain.handle(IPC.actionsDraft, async (_e, projectId: string, description: string, global: boolean) => {
     await envReady
-    return draftAction(getProject(projectId).repoPath, description)
+    return draftAction(getProject(projectId).repoPath, description, global === true)
   })
 
   // What an action run can see and do on its board (boardTools.ts).
@@ -556,7 +576,7 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
       const board = getBoard(projectId)
       const sessionId = crypto.randomUUID()
       const terminal = opts.kind === 'terminal'
-      const action = terminal ? undefined : project.actions?.find((a) => a.id === opts.actionId)
+      const action = terminal || !opts.actionId ? undefined : findAction(project, opts.actionId)
       if (opts.actionId && !action) throw new Error('That action no longer exists')
       const node: BoardNode = {
         sessionId,
@@ -567,7 +587,6 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
         title: opts.name?.trim() || undefined,
         parents: !terminal && opts.parents?.length ? opts.parents : undefined,
         createdByApp: true,
-        expanded: opts.expanded || undefined,
         runOf: action?.id,
         createdAt: Date.now()
       }
@@ -582,6 +601,7 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
           resume: false,
           name: terminal ? undefined : node.title,
           initialPrompt: terminal ? undefined : action?.prompt ?? (opts.initialPrompt?.trim() || undefined),
+          permissionMode: action ? 'auto' : undefined,
           extraArgs: action ? await runArgs(projectId, sessionId, action) : undefined
         })
       } catch (err) {

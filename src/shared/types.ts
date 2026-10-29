@@ -28,9 +28,9 @@ export interface Project {
 }
 
 /**
- * A button in the board's Actions dock. Claude drafts it from what the user
- * describes; each press starts a session on its prompt, in a section of its
- * own, and both leave the board once the session finishes.
+ * A button in the board's actions rail. Claude drafts it from what the user
+ * describes; each press starts a session on its prompt, in auto mode, that
+ * shows beside the button rather than on the board and goes once it finishes.
  */
 export interface ProjectAction {
   id: string
@@ -41,16 +41,19 @@ export interface ProjectAction {
   description: string
   /** The run's first prompt. */
   prompt: string
-  /**
-   * Permission rules a run may use without asking, such as "Bash(git push *)".
-   * The board tools are always allowed.
-   */
-  allowedTools: string[]
+  /** In every project's rail, and kept app-wide rather than with one project. */
+  global?: boolean
   createdAt: number
 }
 
+/** A project's own actions, and the global ones every project shares. */
+export interface ActionLists {
+  project: Project
+  global: ProjectAction[]
+}
+
 /** Claude's draft of an action, for the user to review before saving. */
-export type ActionDraft = Pick<ProjectAction, 'name' | 'icon' | 'prompt' | 'allowedTools'>
+export type ActionDraft = Pick<ProjectAction, 'name' | 'icon' | 'prompt'>
 
 /** An action run that finished and left the board, with Claude's last word on it. */
 export interface ActionRunResult {
@@ -136,7 +139,10 @@ export interface BoardNode {
   /** Size of the expanded card, once it has been resized. */
   w?: number
   h?: number
-  /** The action this session is a run of. It leaves the board when its turn ends. */
+  /**
+   * The action this session is a run of. Runs aren't drawn on the board, and
+   * go when their turn ends; one the user takes over joins the board.
+   */
   runOf?: string
   createdAt: number
 }
@@ -153,8 +159,6 @@ export interface BoardSection {
   color: FolderColor
   x: number
   y: number
-  /** The action run this section holds (its session id); it goes with the run. */
-  run?: string
   createdAt: number
 }
 
@@ -168,6 +172,11 @@ export interface BoardNote {
   /** Size of the note, once it has been resized. */
   w?: number
   h?: number
+  /**
+   * The session started from the note. It's drawn as a sticker on that
+   * session's card, rather than on the board, until the card leaves.
+   */
+  sessionId?: string
   createdAt: number
 }
 
@@ -271,9 +280,7 @@ export interface CreateSessionOptions {
   /** First message sent to the new session (used by the merge feature). */
   initialPrompt?: string
   parents?: string[]
-  /** Starts the card expanded on the board. */
-  expanded?: boolean
-  /** Runs this project action: its prompt, tools and board access. Claude sessions only. */
+  /** Runs this project action: its prompt, auto mode and board tools. Claude sessions only. */
   actionId?: string
 }
 
@@ -329,8 +336,6 @@ export type ThemePreference = 'system' | 'light' | 'dark'
 /** App-wide preferences, persisted with the rest of the state. */
 export interface AppSettings {
   theme: ThemePreference
-  /** New sessions start expanded on the board, so closing their window leaves the terminal showing. */
-  expandNewSessions: boolean
 }
 
 /**

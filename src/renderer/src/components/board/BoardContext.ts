@@ -12,6 +12,8 @@ export interface BoardActions {
   expand(sessionIds: string[], expanded: boolean): void
   /** Saves what's written on a sticky note. */
   editNote(note: BoardNote, text: string): void
+  /** Starts a Claude session on a note's text; the note then sticks to the session's card. */
+  startNote(noteId: string): void
 }
 
 export const BoardActionsContext = createContext<BoardActions | null>(null)

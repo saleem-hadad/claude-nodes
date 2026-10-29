@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type {
+  ActionLists,
   AgentInfo,
   BoardNote,
   BoardSection,
@@ -24,6 +25,8 @@ interface AppState {
   projects: Project[]
   groups: ProjectGroup[]
   stats: Record<string, ProjectStats>
+  /** Actions in every project's rail, beside each project's own. */
+  globalActions: ProjectAction[]
 
   /** Board of the project in the current route, or null on the projects view. */
   board: BoardSnapshot | null
@@ -67,8 +70,9 @@ interface AppState {
   refreshGit(): Promise<void>
   openDiff(): void
   closeDiff(): void
-  /** Adds one of a project's actions, or replaces it, and persists it. */
+  /** Adds an action, or replaces it, and persists it: on the project, or app-wide when global. */
   saveAction(projectId: string, action: ProjectAction): Promise<void>
+  /** Deletes one of the project's actions, or a global one. */
   removeAction(projectId: string, actionId: string): Promise<void>
 
   openTerminal(sessionId: string): void
@@ -92,6 +96,7 @@ export const useApp = create<AppState>((set, get) => ({
   projects: [],
   groups: [],
   stats: {},
+  globalActions: [],
   board: null,
   boardLoading: false,
   git: null,
@@ -118,12 +123,13 @@ export const useApp = create<AppState>((set, get) => ({
   },
 
   async refreshProjects() {
-    const [projects, groups, stats] = await Promise.all([
+    const [projects, groups, stats, globalActions] = await Promise.all([
       window.api.projects.list(),
       window.api.groups.list(),
-      window.api.projects.stats()
+      window.api.projects.stats(),
+      window.api.actions.global()
     ])
-    set({ projects, groups, stats })
+    set({ projects, groups, stats, globalActions })
   },
 
   async loadBoard(projectId) {
@@ -182,8 +188,18 @@ export const useApp = create<AppState>((set, get) => ({
   async removeCard(sessionId) {
     const board = get().board
     if (!board) return
+    const card = board.cards.find((c) => c.sessionId === sessionId)
     set({
-      board: { ...board, cards: board.cards.filter((c) => c.sessionId !== sessionId) },
+      board: {
+        ...board,
+        cards: board.cards.filter((c) => c.sessionId !== sessionId),
+        // Its sticker falls off onto the board (the main process does the same).
+        notes: board.notes.map((n) =>
+          n.sessionId !== sessionId
+            ? n
+            : { ...n, sessionId: undefined, ...(card && !card.archived ? { x: card.x, y: card.y } : {}) }
+        )
+      },
       selection: get().selection.filter((id) => id !== sessionId)
     })
     disposeTerminal(sessionId)
@@ -315,23 +331,24 @@ export const useApp = create<AppState>((set, get) => ({
   closeDiff: () => set({ diffOpen: false }),
 
   async saveAction(projectId, action) {
-    setProject(await window.api.actions.save(projectId, action))
+    setActions(await window.api.actions.save(projectId, action))
   },
 
   async removeAction(projectId, actionId) {
-    setProject(await window.api.actions.remove(projectId, actionId))
+    setActions(await window.api.actions.remove(projectId, actionId))
   },
   setSelection: (ids) => set({ selection: ids }),
   openSettings: () => set({ settingsOpen: true }),
   closeSettings: () => set({ settingsOpen: false })
 }))
 
-/** Puts a project the main process changed into the project list and the open board. */
-function setProject(project: Project) {
+/** Puts the action lists the main process changed into the store: the project's own, and the global ones. */
+function setActions({ project, global }: ActionLists) {
   const { projects, board } = useApp.getState()
   useApp.setState({
     projects: projects.map((p) => (p.id === project.id ? project : p)),
-    board: board?.project.id === project.id ? { ...board, project } : board
+    board: board?.project.id === project.id ? { ...board, project } : board,
+    globalActions: global
   })
 }
 

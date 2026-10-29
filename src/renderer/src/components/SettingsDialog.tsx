@@ -92,27 +92,6 @@ function SettingsPanel({ onClose }: { onClose: () => void }) {
           </div>
           <p className="settings-hint">System follows the appearance set in macOS.</p>
         </fieldset>
-
-        <fieldset className="settings-group">
-          <legend className="settings-label">Sessions</legend>
-          <label className="settings-row">
-            <span className="settings-row-text">
-              <span>Keep new sessions expanded</span>
-              <span className="settings-row-hint">
-                Closing a new session’s window leaves it expanded on the board, terminal showing.
-                Off, it folds into a compact card.
-              </span>
-            </span>
-            <input
-              type="checkbox"
-              role="switch"
-              className="settings-switch"
-              checked={settings?.expandNewSessions ?? false}
-              disabled={!settings}
-              onChange={(e) => update({ expandNewSessions: e.target.checked })}
-            />
-          </label>
-        </fieldset>
       </div>
     </div>
   )

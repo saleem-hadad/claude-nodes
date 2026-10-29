@@ -1,6 +1,6 @@
 // Geometry for sticky notes, and the pad under the archive they're peeled off.
 import type { Node } from '@xyflow/react'
-import type { BoardNote, FolderColor, Rect } from '@shared/types'
+import type { BoardNote, FolderColor, Rect, SessionCard } from '@shared/types'
 import { ARCHIVE_HEADER_H, ARCHIVE_PAD, CARD_H, STACK_W, isInArchive, stackZone, type Point, type Size } from './layout'
 import type { NoteFlowNode } from './NoteNode'
 import type { NotePadFlowNode } from './NotePadNode'
@@ -30,9 +30,27 @@ export function noteSize(note: Pick<BoardNote, 'w' | 'h'>): Size {
   return { w: note.w ?? NOTE_W, h: note.h ?? NOTE_H }
 }
 
-/** Obstacle rectangles for all notes. */
+/** Obstacle rectangles for the notes on the board (stickers ride on their cards). */
 export function noteObstacles(notes: BoardNote[]): Rect[] {
-  return notes.map((n) => ({ x: n.x, y: n.y, ...noteSize(n) }))
+  return notes.filter((n) => !n.sessionId).map((n) => ({ x: n.x, y: n.y, ...noteSize(n) }))
+}
+
+/**
+ * Notes on the board, and the ones stuck on cards as stickers, by session. A
+ * note whose card isn't on the board (yet, or any more) stays on the board.
+ */
+export function splitNotes(notes: BoardNote[], cards: SessionCard[]) {
+  const onBoard = new Set(cards.map((c) => c.sessionId))
+  const free: BoardNote[] = []
+  const stuck = new Map<string, BoardNote[]>()
+  for (const note of notes) {
+    if (note.sessionId && onBoard.has(note.sessionId)) {
+      stuck.set(note.sessionId, [...(stuck.get(note.sessionId) ?? []), note])
+    } else {
+      free.push(note)
+    }
+  }
+  return { free, stuck }
 }
 
 /** The pad under the archive's stack. It goes by the folded stack, so the open panel floats over it. */

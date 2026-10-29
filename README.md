@@ -65,7 +65,7 @@ https://github.com/user-attachments/assets/21921a47-2635-4bc4-83f8-166f83134bde
 - **Agents as a deck.** When Claude runs agents, they peek out from under the session's card in their status colours. Point at the deck to fan them out and see what each is doing, or click one for its live transcript.
 - **Sessions outlive the app.** Quit Claude Nodes and your sessions keep working. Open it again and they're right where you left them.
 - **New session from context.** Select a few cards and start a session that already knows what they did.
-- **Action buttons.** Describe a button ("pull and push, resolving conflicts", "archive the sessions that are done") and Claude writes it. Each press runs in its own section on the board, then clears itself away.
+- **Action buttons.** Describe a button ("pull and push, resolving conflicts", "archive the sessions that are done") and Claude writes it. Buttons sit in a rail on the right edge. A press runs Claude in the background, with its session fanned out beside the button until it's done.
 - **A searchable archive.** Old sessions stack up in one pile. Drag a card out to pick it up again.
 - **Sticky notes.** Peel a note off the pad under the archive and stick it anywhere on the board, for reminders and scratch notes.
 
