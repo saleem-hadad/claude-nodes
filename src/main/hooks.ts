@@ -7,7 +7,12 @@
 // Hooks fired inside a subagent carry its agent_id. Those drive the agent's own
 // status, and a card reads as working (or waiting) while its main thread or any
 // of its agents is.
-import type { SessionStatus } from '@shared/types'
+//
+// The same settings take over Claude's status line: it posts what it would
+// show (model, context, cost) and prints nothing, so the card shows it instead
+// and the terminal keeps the row.
+import type { SessionStatus, SessionUsage } from '@shared/types'
+import { STATUS_LINE_EVENT } from './hostProtocol'
 
 const HOOK_EVENTS = [
   'SessionStart',
@@ -27,6 +32,7 @@ type Json = Record<string, any>
 
 export type StatusListener = (sessionId: string, status: SessionStatus, live: boolean) => void
 export type AgentStatusListener = (sessionId: string, agentId: string, status: SessionStatus) => void
+export type UsageListener = (sessionId: string, usage: SessionUsage) => void
 
 /** The session host's hook server, which passes hooks on to receiveHook. */
 let endpoint = { port: 0, token: '' }
@@ -49,20 +55,27 @@ interface AgentHook {
 /** Agents seen through hooks in each session's current process, by agent id. */
 const agentHooks = new Map<string, Map<string, AgentHook>>()
 
+/** Each session's latest status line report, kept after its process exits. */
+const usages = new Map<string, SessionUsage>()
+const lastUsageKey = new Map<string, string>()
+
 let listener: StatusListener = () => {}
 let agentListener: AgentStatusListener = () => {}
+let usageListener: UsageListener = () => {}
 let isLive: (sessionId: string) => boolean = () => false
 let hasPendingWork: (transcriptPath: string) => boolean = () => false
 
 export function configureStatus(opts: {
   onChange: StatusListener
   onAgentChange: AgentStatusListener
+  onUsage: UsageListener
   isLive: (id: string) => boolean
   /** Whether an agent (by its transcript) has background work in flight that will wake it. */
   hasPendingWork: (transcriptPath: string) => boolean
 }) {
   listener = opts.onChange
   agentListener = opts.onAgentChange
+  usageListener = opts.onUsage
   isLive = opts.isLive
   hasPendingWork = opts.hasPendingWork
 }
@@ -144,6 +157,7 @@ export function markProcess(sessionId: string, live: boolean, initial: SessionSt
   // Agents only run inside the process; a new one starts with none.
   agentHooks.delete(sessionId)
   emit(sessionId, live)
+  pauseUsage(sessionId, live)
 }
 
 export function forgetStatus(sessionId: string) {
@@ -151,6 +165,8 @@ export function forgetStatus(sessionId: string) {
   lastEmitted.delete(sessionId)
   lastHookAt.delete(sessionId)
   agentHooks.delete(sessionId)
+  usages.delete(sessionId)
+  lastUsageKey.delete(sessionId)
 }
 
 const isPermissionNotification = (payload: Json) => {
@@ -253,6 +269,69 @@ export function noteUserInput(sessionId: string, data: string, at = Date.now()) 
 }
 
 // ---------------------------------------------------------------------------
+// Status line
+
+export function getUsage(sessionId: string): SessionUsage | undefined {
+  return usages.get(sessionId)
+}
+
+const num = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : undefined)
+
+function toUsage(payload: Json, at: number): SessionUsage {
+  const model = payload.model ?? {}
+  const context = payload.context_window ?? {}
+  const current = context.current_usage
+  // What the next request sends: the reply's input, cached or not. Null before the first reply.
+  const contextTokens =
+    current && typeof current === 'object'
+      ? (num(current.input_tokens) ?? 0) +
+        (num(current.cache_creation_input_tokens) ?? 0) +
+        (num(current.cache_read_input_tokens) ?? 0)
+      : undefined
+  const contextSize = num(context.context_window_size)
+  const percent =
+    num(context.used_percentage) ??
+    (contextTokens !== undefined && contextSize ? (contextTokens / contextSize) * 100 : undefined)
+  return {
+    model: String(model.display_name || model.id || '') || undefined,
+    contextPercent: percent,
+    contextTokens,
+    contextSize,
+    costUsd: num(payload.cost?.total_cost_usd),
+    durationMs: num(payload.cost?.total_duration_ms),
+    at
+  }
+}
+
+/**
+ * The renderer counts the running time on from the last report, so a report
+ * that only moved the clock is kept without being sent.
+ */
+function setUsage(sessionId: string, usage: SessionUsage) {
+  usages.set(sessionId, usage)
+  const cents = usage.costUsd === undefined ? '' : Math.round(usage.costUsd * 100)
+  const key = [usage.model, usage.contextPercent, usage.contextTokens, usage.contextSize, cents].join('|')
+  if (lastUsageKey.get(sessionId) === key) return
+  lastUsageKey.set(sessionId, key)
+  usageListener(sessionId, usage)
+}
+
+/**
+ * The running time stops with the process and picks up when it starts again,
+ * as Claude counts it.
+ */
+function pauseUsage(sessionId: string, live: boolean, at = Date.now()) {
+  const usage = usages.get(sessionId)
+  if (!usage) return
+  // The new process's first report has its own count; send it whatever it says.
+  if (live) lastUsageKey.delete(sessionId)
+  const durationMs = usage.durationMs === undefined || live ? usage.durationMs : usage.durationMs + at - usage.at
+  const next = { ...usage, durationMs, at }
+  usages.set(sessionId, next)
+  usageListener(sessionId, next)
+}
+
+// ---------------------------------------------------------------------------
 // Endpoint
 //
 // The hook server runs in the session host (host.ts), so it outlives the app
@@ -268,7 +347,8 @@ export function setHookEndpoint(port: number, token: string) {
  * to noteUserInput: agents.ts and the interrupt check compare against it.
  */
 export function receiveHook(event: string, sessionId: string, payload: Json, at = Date.now()) {
-  if (HOOK_EVENTS.includes(event as HookEvent)) handleHook(event as HookEvent, sessionId, payload ?? {}, at)
+  if (event === STATUS_LINE_EVENT) setUsage(sessionId, toUsage(payload ?? {}, at))
+  else if (HOOK_EVENTS.includes(event as HookEvent)) handleHook(event as HookEvent, sessionId, payload ?? {}, at)
 }
 
 /** Env vars a spawned claude process needs so its hooks can reach us. */
@@ -282,18 +362,26 @@ export function hookEnv(sessionId: string): Record<string, string> {
 
 let settingsJson: string | null = null
 
-/** The `--settings` JSON registering our hooks. Identical for every process. */
+/** A command posting its stdin to the host under `event`, and printing nothing. */
+const postCommand = (event: string) =>
+  `curl -s -m 2 -X POST -H 'Content-Type: application/json' --data-binary @- ` +
+  `"http://127.0.0.1:$CLAUDE_NODES_PORT/hook?evt=${event}&sid=$CLAUDE_NODES_SESSION&token=$CLAUDE_NODES_TOKEN" ` +
+  `>/dev/null 2>&1; exit 0`
+
+/**
+ * The `--settings` JSON registering our hooks and status line. Identical for
+ * every process. Flag settings outrank the user's, so their own status line
+ * makes way for ours.
+ */
 export function hookSettings(): string {
   if (settingsJson) return settingsJson
   const hooks: Record<string, unknown> = {}
   for (const event of HOOK_EVENTS) {
     // Output must stay empty: UserPromptSubmit stdout is injected into Claude's context.
-    const command =
-      `curl -s -m 2 -X POST -H 'Content-Type: application/json' --data-binary @- ` +
-      `"http://127.0.0.1:$CLAUDE_NODES_PORT/hook?evt=${event}&sid=$CLAUDE_NODES_SESSION&token=$CLAUDE_NODES_TOKEN" ` +
-      `>/dev/null 2>&1; exit 0`
-    hooks[event] = [{ hooks: [{ type: 'command', command, timeout: 5 }] }]
+    hooks[event] = [{ hooks: [{ type: 'command', command: postCommand(event), timeout: 5 }] }]
   }
-  settingsJson = JSON.stringify({ hooks })
+  // With no output, the terminal shows no status line.
+  const statusLine = { type: 'command', command: postCommand(STATUS_LINE_EVENT), padding: 0 }
+  settingsJson = JSON.stringify({ hooks, statusLine })
   return settingsJson
 }

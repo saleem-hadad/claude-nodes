@@ -1,0 +1,44 @@
+/* Claude's status line, in a session's header. */
+.usage {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.usage-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.usage-model {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+/* How full the context window is; it turns orange, then red, as it nears compaction. */
+.usage-meter {
+  position: relative;
+  width: 22px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+}
+.usage-meter > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: currentColor;
+}
+.usage-context[data-level='high'] {
+  color: var(--status-working);
+}
+.usage-context[data-level='full'] {
+  color: var(--status-waiting);
+}

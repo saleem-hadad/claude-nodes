@@ -22,6 +22,9 @@ export function App() {
     const offAgentStatus = window.api.on.agentStatus((sessionId, agentId, status) => {
       useApp.getState().setAgentStatus(sessionId, agentId, status)
     })
+    const offUsage = window.api.on.usage((sessionId, usage) => {
+      useApp.getState().setUsage(sessionId, usage)
+    })
 
     // Folder badges (in the grid and the project rail) show live counts, so refresh stats when statuses change.
     let statsTimer: number | undefined
@@ -58,6 +61,7 @@ export function App() {
       window.removeEventListener('drop', blockDrop)
       offStatus()
       offAgentStatus()
+      offUsage()
       offStatsRefresh()
       offBoard()
       offMenu()

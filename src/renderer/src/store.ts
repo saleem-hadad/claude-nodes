@@ -10,7 +10,8 @@ import type {
   Rect,
   GitStatus,
   SessionCard,
-  SessionStatus
+  SessionStatus,
+  SessionUsage
 } from '@shared/types'
 import { dispose as disposeTerminal } from './terminal/registry'
 
@@ -56,6 +57,7 @@ interface AppState {
   removeSection(sectionId: string): void
   setStatus(sessionId: string, status: SessionStatus, live: boolean): void
   setAgentStatus(sessionId: string, agentId: string, status: SessionStatus): void
+  setUsage(sessionId: string, usage: SessionUsage): void
   /** Re-reads the open board's git status. */
   refreshGit(): Promise<void>
   openDiff(): void
@@ -243,6 +245,14 @@ export const useApp = create<AppState>((set, get) => ({
     const agents = card.agents!.map((a) => (a === agent ? { ...a, status } : a))
     set({
       board: { ...board, cards: board.cards.map((c) => (c === card ? { ...c, agents } : c)) }
+    })
+  },
+
+  setUsage(sessionId, usage) {
+    const board = get().board
+    if (!board?.cards.some((c) => c.sessionId === sessionId)) return
+    set({
+      board: { ...board, cards: board.cards.map((c) => (c.sessionId === sessionId ? { ...c, usage } : c)) }
     })
   },
 

@@ -3,7 +3,7 @@ import fs from 'fs'
 import type { BoardNode, BoardSnapshot, Project, ProjectStats, Rect, SessionCard } from '@shared/types'
 import { attachAgents } from './agents'
 import { scanRepo, transcriptDir, transcriptPath, type DiscoveredSession } from './discovery'
-import { getStatus } from './hooks'
+import { getStatus, getUsage } from './hooks'
 import { isLive } from './pty'
 import { getBoard, save, type BoardState } from './store'
 
@@ -74,7 +74,8 @@ export function toCard(node: BoardNode, found?: DiscoveredSession): SessionCard 
     ...node,
     meta: found?.hasContent ? found.meta : undefined,
     status: node.archived ? 'done' : getStatus(node.sessionId),
-    live
+    live,
+    usage: getUsage(node.sessionId)
   }
 }
 

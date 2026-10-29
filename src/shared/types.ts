@@ -162,6 +162,29 @@ export interface SessionCard extends BoardNode {
   agents?: AgentInfo[]
   /** How many subagents the session has started in all. */
   agentCount?: number
+  /** What Claude last reported about the session's model, context and cost. Claude cards only. */
+  usage?: SessionUsage
+}
+
+/**
+ * What Claude Code reports to its status line, which sessions started from
+ * the app send to us instead of drawing in the terminal.
+ */
+export interface SessionUsage {
+  /** e.g. Opus 5.5 */
+  model?: string
+  /** Share of the context window in use, 0–100. Unknown before the first reply. */
+  contextPercent?: number
+  /** Tokens in the context window, and its size. */
+  contextTokens?: number
+  contextSize?: number
+  costUsd?: number
+  /**
+   * Time the session has been running as of `at`, carried across resumes.
+   * It keeps counting while the process is live.
+   */
+  durationMs?: number
+  at: number
 }
 
 export interface BoardSnapshot {

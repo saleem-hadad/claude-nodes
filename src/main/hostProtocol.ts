@@ -14,6 +14,12 @@ import type { SessionStatus } from '@shared/types'
  */
 export const PROTOCOL = 1
 
+/**
+ * The event name Claude's status line reports arrive under, beside the hooks.
+ * They come after every reply, so only the latest is kept, apart from history.
+ */
+export const STATUS_LINE_EVENT = 'StatusLine'
+
 /** Hooks and the keystrokes status depends on, in the order they happened, with when. */
 export type HistoryEntry = ({ hook: string; payload: Record<string, unknown> } | { input: string }) & { at: number }
 
@@ -26,6 +32,11 @@ export interface HostSession {
   buffer: string
   /** Everything that has moved its status since the process started, oldest first. */
   history: HistoryEntry[]
+  /**
+   * Claude's latest status line report. Optional, as an older host doesn't
+   * keep one; that needs no new protocol, and running sessions carry on.
+   */
+  statusLine?: { payload: Record<string, unknown>; at: number }
 }
 
 export interface SpawnRequest {

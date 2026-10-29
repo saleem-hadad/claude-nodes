@@ -96,6 +96,7 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
   configureStatus({
     onChange: (sessionId, status, live) => send(IPC.evStatus, sessionId, status, live),
     onAgentChange: (sessionId, agentId, status) => send(IPC.evAgentStatus, sessionId, agentId, status),
+    onUsage: (sessionId, usage) => send(IPC.evUsage, sessionId, usage),
     isLive: ptys.isLive,
     hasPendingWork
   })

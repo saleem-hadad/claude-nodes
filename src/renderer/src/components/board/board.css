@@ -316,6 +316,18 @@ kbd {
   flex: none;
   height: 40px;
   padding: 0 6px 0 14px;
+  container-type: inline-size;
+}
+/* Claude's status line gives way to the title as the card narrows: first the model, then the rest. */
+@container (max-width: 560px) {
+  .card-xhead .usage-model {
+    display: none;
+  }
+}
+@container (max-width: 440px) {
+  .card-xhead .usage {
+    display: none;
+  }
 }
 .card-xhead .card-title {
   display: block;

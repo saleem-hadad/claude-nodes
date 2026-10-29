@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 're
 import { AppWindowMac, LoaderCircle, Minimize2, Play, RotateCcw, SquareTerminal } from 'lucide-react'
 import type { SessionCard } from '@shared/types'
 import { useApp } from '@renderer/store'
+import { UsageStats } from '@renderer/components/UsageStats'
 import * as registry from '@renderer/terminal/registry'
 import { useAttachedTerminal } from '@renderer/terminal/useAttachedTerminal'
 import '@renderer/terminal/terminal.css'
@@ -103,6 +104,7 @@ export function ExpandedCard({ card, heading, tools }: { card: SessionCard; head
     <>
       <header className="card-xhead">
         {heading}
+        {!shell && <UsageStats usage={card.usage} live={card.live} />}
         <div className="card-tools nodrag" onClick={stop} onDoubleClick={stop}>
           {tools}
           {canResume && (

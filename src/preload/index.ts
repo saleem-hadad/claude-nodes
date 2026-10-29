@@ -77,6 +77,7 @@ const api: Api = {
     ptyExit: (cb) => subscribe(IPC.evPtyExit, cb),
     status: (cb) => subscribe(IPC.evStatus, cb),
     agentStatus: (cb) => subscribe(IPC.evAgentStatus, cb),
+    usage: (cb) => subscribe(IPC.evUsage, cb),
     boardChanged: (cb) => subscribe(IPC.evBoardChanged, cb),
     summarizeProgress: (cb) => subscribe(IPC.evSummarizeProgress, cb),
     menu: (cb) => subscribe(IPC.evMenu, cb)

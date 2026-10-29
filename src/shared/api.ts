@@ -20,6 +20,7 @@ import type {
   Rect,
   SessionCard,
   SessionStatus,
+  SessionUsage,
   SummarizeProgress,
   SummaryResult,
   TranscriptMessage,
@@ -71,6 +72,7 @@ export const IPC = {
   evPtyExit: 'ev:pty-exit',
   evStatus: 'ev:status',
   evAgentStatus: 'ev:agent-status',
+  evUsage: 'ev:usage',
   evBoardChanged: 'ev:board-changed',
   evSummarizeProgress: 'ev:summarize-progress',
   evMenu: 'ev:menu'
@@ -178,6 +180,8 @@ export interface Api {
     status(cb: (sessionId: string, status: SessionStatus, live: boolean) => void): Unsubscribe
     /** A subagent started working, needs the user, or finished. */
     agentStatus(cb: (sessionId: string, agentId: string, status: SessionStatus) => void): Unsubscribe
+    /** A session's model, context, running time or cost changed. */
+    usage(cb: (sessionId: string, usage: SessionUsage) => void): Unsubscribe
     /** Transcripts or board state changed on disk; the renderer should reload the board. */
     boardChanged(cb: (projectId: string) => void): Unsubscribe
     summarizeProgress(cb: (progress: SummarizeProgress) => void): Unsubscribe

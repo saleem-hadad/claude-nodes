@@ -18,6 +18,7 @@ import type { SessionStatus } from '@shared/types'
 import {
   PROTOCOL,
   STATUS_KEY,
+  STATUS_LINE_EVENT,
   encode,
   messageReader,
   type ClientMessage,
@@ -40,6 +41,7 @@ interface Session {
   chunks: string[]
   size: number
   history: HistoryEntry[]
+  statusLine?: { payload: Record<string, unknown>; at: number }
   killTimer: NodeJS.Timeout | null
 }
 
@@ -202,7 +204,8 @@ const server = net.createServer((socket) => {
             projectId: s.projectId,
             initial: s.initial,
             buffer: s.chunks.join(''),
-            history: s.history
+            history: s.history,
+            statusLine: s.statusLine
           }))
           socket.write(
             encode({ type: 'welcome', protocol: PROTOCOL, hookPort, hookToken, sessions: sessionList })
@@ -227,7 +230,8 @@ const server = net.createServer((socket) => {
 })
 
 // ---------------------------------------------------------------------------
-// Hooks: the same endpoint hooks.ts registers with every claude process.
+// Hooks: the same endpoint hooks.ts registers with every claude process, and
+// its status line.
 
 const hookServer = http.createServer((req, res) => {
   const url = new URL(req.url ?? '/', 'http://127.0.0.1')
@@ -250,7 +254,8 @@ const hookServer = http.createServer((req, res) => {
     } catch {
       // Status still updates from the event name alone.
     }
-    record(s, { hook: event, payload: slim(payload), at: Date.now() })
+    if (event === STATUS_LINE_EVENT) s.statusLine = { payload, at: Date.now() }
+    else record(s, { hook: event, payload: slim(payload), at: Date.now() })
     broadcast({ type: 'hook', sessionId: s.sessionId, event, payload })
   })
 })

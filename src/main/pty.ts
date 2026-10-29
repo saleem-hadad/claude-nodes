@@ -15,6 +15,7 @@ import { requireClaude, spawnEnv, userShell } from './env'
 import { hookEnv, hookSettings, markProcess, noteUserInput, receiveHook, setHookEndpoint } from './hooks'
 import {
   PROTOCOL,
+  STATUS_LINE_EVENT,
   encode,
   ensurePrivateDir,
   hostPaths,
@@ -176,6 +177,7 @@ function adopt(welcome: Extract<HostMessage, { type: 'welcome' }>) {
       if ('hook' in entry) receiveHook(entry.hook, s.sessionId, entry.payload, entry.at)
       else noteUserInput(s.sessionId, entry.input, entry.at)
     }
+    if (s.statusLine) receiveHook(STATUS_LINE_EVENT, s.sessionId, s.statusLine.payload, s.statusLine.at)
   }
 }
 

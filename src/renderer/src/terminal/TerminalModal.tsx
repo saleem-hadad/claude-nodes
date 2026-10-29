@@ -12,6 +12,7 @@ import {
   X
 } from 'lucide-react'
 import { Modal } from '@renderer/components/Modal'
+import { UsageStats } from '@renderer/components/UsageStats'
 import { cardTitle, isTerminal, tildePath, useApp, useCard } from '@renderer/store'
 import type { SessionCard } from '@shared/types'
 import * as registry from './registry'
@@ -185,6 +186,7 @@ function TerminalHeader({
               )}
             </button>
           )}
+          {!shell && card && <UsageStats usage={card.usage} live={card.live} />}
         </div>
       </div>
 
