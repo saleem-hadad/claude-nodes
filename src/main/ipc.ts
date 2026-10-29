@@ -8,6 +8,7 @@ import type {
   AppInfo,
   AppSettings,
   BoardNode,
+  BoardNote,
   BoardSection,
   CreateSessionOptions,
   FolderColor,
@@ -66,6 +67,9 @@ function pickFolderColor(projects: Project[]): FolderColor {
 
 /** Bounds for an expanded card's size, in board units. */
 const clampSize = (n: number) => Math.round(Math.min(4000, Math.max(200, n)))
+/** Bounds for a sticky note's size, and how much text it keeps. */
+const clampNoteSize = (n: number) => Math.round(Math.min(1200, Math.max(120, n)))
+const NOTE_MAX_CHARS = 20_000
 
 /**
  * Applies settings that live outside the renderer. The theme goes through
@@ -329,6 +333,28 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
     }
     if (sources.length === 0) throw new Error('These sessions have nothing to name the section after yet')
     return nameSection(sources)
+  })
+
+  ipcMain.handle(IPC.boardSaveNote, (_e, projectId: string, note: BoardNote) => {
+    if (typeof note?.id !== 'string' || !Number.isFinite(note.x) || !Number.isFinite(note.y)) return
+    const board = getBoard(projectId)
+    board.notes![note.id] = {
+      id: note.id,
+      text: typeof note.text === 'string' ? note.text.slice(0, NOTE_MAX_CHARS) : '',
+      color: FOLDER_COLORS.includes(note.color) ? note.color : 'yellow',
+      x: Math.round(note.x),
+      y: Math.round(note.y),
+      w: Number.isFinite(note.w) ? clampNoteSize(note.w!) : undefined,
+      h: Number.isFinite(note.h) ? clampNoteSize(note.h!) : undefined,
+      createdAt: board.notes![note.id]?.createdAt ?? Date.now()
+    }
+    save()
+  })
+
+  ipcMain.handle(IPC.boardRemoveNotes, (_e, projectId: string, noteIds: string[]) => {
+    const board = getBoard(projectId)
+    for (const id of noteIds) delete board.notes![id]
+    save()
   })
 
   ipcMain.handle(IPC.boardSaveArchive, (_e, projectId: string, rect: Rect) => {

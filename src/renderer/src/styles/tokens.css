@@ -60,6 +60,13 @@
   --archive-drop: rgba(0, 122, 255, 0.08);
   --archive-panel: rgba(248, 248, 247, 0.8);
 
+  /* Sticky notes: paper tinted with the note's colour, light (with dark ink) in either theme */
+  --note-paper: #ffffff;
+  --note-ink: rgba(0, 0, 0, 0.82);
+  --note-ink-faint: rgba(0, 0, 0, 0.38);
+  --note-shadow: 0 1px 1.5px rgba(0, 0, 0, 0.08), 0 8px 16px -8px rgba(0, 0, 0, 0.3);
+  --note-shadow-lifted: 0 2px 4px rgba(0, 0, 0, 0.08), 0 20px 32px -12px rgba(0, 0, 0, 0.36);
+
   /* Folder icon (macOS style); the per-colour hues live in FolderIcon */
   --folder-label-selected: #0063e1;
 
@@ -131,6 +138,11 @@
     --archive-label: rgba(255, 255, 255, 0.42);
     --archive-drop: rgba(10, 132, 255, 0.12);
     --archive-panel: rgba(38, 38, 41, 0.8);
+
+    /* Dimmer paper, so notes don't glare against the dark canvas. */
+    --note-paper: #b4b4b8;
+    --note-shadow: 0 1px 1.5px rgba(0, 0, 0, 0.3), 0 8px 18px -8px rgba(0, 0, 0, 0.6);
+    --note-shadow-lifted: 0 2px 4px rgba(0, 0, 0, 0.3), 0 20px 34px -12px rgba(0, 0, 0, 0.7);
 
     --folder-label-selected: #0a84ff;
 

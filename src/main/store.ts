@@ -5,6 +5,7 @@ import path from 'path'
 import type {
   AppSettings,
   BoardNode,
+  BoardNote,
   BoardSection,
   Project,
   ProjectGroup,
@@ -30,6 +31,7 @@ export interface BoardState {
   nodes: Record<string, BoardNode>
   archive: Rect
   sections?: Record<string, BoardSection>
+  notes?: Record<string, BoardNote>
   viewport?: Viewport
   /** Sessions removed from the board; never re-imported. */
   hidden?: string[]
@@ -120,6 +122,7 @@ export function getBoard(projectId: string): BoardState {
   }
   if (!board.hidden) board.hidden = []
   if (!board.sections) board.sections = {}
+  if (!board.notes) board.notes = {}
   return board
 }
 

@@ -1245,6 +1245,179 @@ kbd {
   stroke: var(--status-working);
 }
 
+/* ------------------------------------------------------------------ notes */
+
+/* Notes glide when the board moves them (out of the pad on a click, or back
+   onto it); one being dragged follows the pointer directly. */
+.board-canvas .react-flow__node-note {
+  cursor: default;
+  transition: transform 420ms var(--ease-out);
+}
+.board-canvas .react-flow__node-note.dragging,
+.board-canvas.is-moving-archive .react-flow__node-note,
+.board-canvas.is-moving-archive .react-flow__node-notepad {
+  transition: none;
+}
+
+.note {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  padding: 16px 18px;
+  border-radius: 4px;
+  /* Paper in the note's colour, a touch darker along the top where it sticks. */
+  background:
+    linear-gradient(rgba(0, 0, 0, 0.035), transparent 22px),
+    color-mix(in srgb, var(--note-hue) 72%, var(--note-paper));
+  box-shadow: var(--note-shadow);
+  color: var(--note-ink);
+  transition:
+    box-shadow var(--dur-med) var(--ease-out),
+    transform var(--dur-med) var(--ease-out);
+}
+.note.is-selected,
+.note.is-editing {
+  box-shadow:
+    0 0 0 2px var(--accent),
+    var(--note-shadow);
+}
+.note.is-dragging {
+  box-shadow: var(--note-shadow-lifted);
+  transform: rotate(-1.5deg) scale(1.02);
+}
+.note.is-selected.is-dragging {
+  box-shadow:
+    0 0 0 2px var(--accent),
+    var(--note-shadow-lifted);
+}
+
+.note-text,
+.note-input {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--text-lg);
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: inherit;
+}
+.note-text {
+  overflow: hidden;
+  /* Writing past the bottom fades out rather than stopping mid-line. */
+  mask-image: linear-gradient(#000 calc(100% - 18px), transparent);
+  user-select: none;
+}
+.note-text.is-empty {
+  color: var(--note-ink-faint);
+}
+.note-input {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  outline: none;
+  resize: none;
+  caret-color: var(--note-ink);
+  cursor: text;
+}
+.note-input::placeholder {
+  color: var(--note-ink-faint);
+}
+
+/* The pad's top sheet lifts at a corner under the pointer, ready to be peeled off. */
+.note.is-draft {
+  cursor: grab;
+  transform-origin: 0 100%;
+}
+.react-flow__node-note:hover .note.is-draft {
+  transform: rotate(-2deg) translateY(-2px);
+  box-shadow: var(--note-shadow-lifted);
+}
+.react-flow__node-note .note.is-draft.is-dragging {
+  cursor: grabbing;
+  transform: rotate(-1.5deg) scale(1.02);
+}
+
+/* A selected note shows handles at its corners to resize it by. */
+.board-canvas .react-flow__resize-control.note-resize-line {
+  z-index: 2;
+  border-color: transparent;
+}
+.board-canvas .react-flow__resize-control.note-resize-line.left,
+.board-canvas .react-flow__resize-control.note-resize-line.right {
+  width: 10px;
+}
+.board-canvas .react-flow__resize-control.note-resize-line.top,
+.board-canvas .react-flow__resize-control.note-resize-line.bottom {
+  height: 10px;
+}
+.board-canvas .react-flow__resize-control.note-resize-handle {
+  z-index: 3;
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid var(--accent);
+  border-radius: 2px;
+  background: var(--bg-elevated);
+}
+
+/* --------------------------------------------------------------- note pad */
+
+/* A frame under the archive, styled like it, holding a pad of notes. Its top
+   sheet is a note node laid over the pad; the sheets drawn here are what's
+   left underneath when it's peeled off. */
+.board-canvas .react-flow__node-notepad {
+  cursor: default;
+}
+.notepad {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 24px;
+  border: 1.5px dashed var(--archive-border);
+  background: var(--archive-bg);
+}
+.notepad-header {
+  display: flex;
+  align-items: center;
+  height: 52px;
+  padding: 0 22px;
+  color: var(--archive-label);
+}
+.notepad-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transform-origin: left center;
+  font-size: var(--text-md);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+.notepad-hint {
+  margin-left: 6px;
+  font-weight: 400;
+  font-size: var(--text-sm);
+}
+.notepad-sheets {
+  position: absolute;
+}
+.notepad-sheet {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 100%;
+}
+/* The sheets beneath show along the bottom edge, like a block of paper. */
+.notepad-sheet[data-depth='1'] {
+  transform: translateY(4px) scale(0.985);
+  filter: brightness(0.94);
+}
+.notepad-sheet[data-depth='2'] {
+  transform: translateY(8px) scale(0.97);
+  filter: brightness(0.88);
+}
+
 /* --------------------------------------------------------------- controls */
 
 .board-controls {

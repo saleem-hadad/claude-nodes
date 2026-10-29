@@ -5,6 +5,7 @@ import type {
   AgentInfo,
   AppInfo,
   AppSettings,
+  BoardNote,
   BoardSection,
   BoardSnapshot,
   CreateSessionOptions,
@@ -53,6 +54,8 @@ export const IPC = {
   boardSaveSection: 'board:save-section',
   boardRemoveSection: 'board:remove-section',
   boardNameSection: 'board:name-section',
+  boardSaveNote: 'board:save-note',
+  boardRemoveNotes: 'board:remove-notes',
 
   sessionCreate: 'session:create',
   sessionOpen: 'session:open',
@@ -145,6 +148,9 @@ export interface Api {
     removeSection(projectId: string, sectionId: string): Promise<void>
     /** Asks Claude for a short name for a section holding these sessions. */
     nameSection(projectId: string, sessionIds: string[]): Promise<string>
+    /** Creates or updates a sticky note. */
+    saveNote(projectId: string, note: BoardNote): Promise<void>
+    removeNotes(projectId: string, noteIds: string[]): Promise<void>
   }
 
   sessions: {

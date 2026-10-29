@@ -32,7 +32,7 @@ export const STACK_SEARCH_Y = ARCHIVE_HEADER_H + CARD_H + 38
 export const STACK_SEARCH_H = 34
 /** Where the fanned-out results start, relative to the archive's corner. */
 export const STACK_RESULTS_X = ARCHIVE_PAD + CARD_W + 40
-const STACK_W = ARCHIVE_PAD * 2 + CARD_W
+export const STACK_W = ARCHIVE_PAD * 2 + CARD_W
 const STACK_H = STACK_SEARCH_Y + STACK_SEARCH_H + 22
 
 export interface Point {
@@ -73,6 +73,18 @@ export function intersects(a: Rect, b: Rect, margin = 0): boolean {
 
 export function containsPoint(r: Rect, p: Point): boolean {
   return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h
+}
+
+/** The smallest rectangle holding all of `rects`. */
+export function boundsOf(rects: Rect[]): Rect {
+  const x = Math.min(...rects.map((r) => r.x))
+  const y = Math.min(...rects.map((r) => r.y))
+  return {
+    x,
+    y,
+    w: Math.max(...rects.map((r) => r.x + r.w)) - x,
+    h: Math.max(...rects.map((r) => r.y + r.h)) - y
+  }
 }
 
 /** A card counts as archived when its center lies inside the archive zone. */
@@ -174,29 +186,35 @@ export function stackRank(card: SessionCard): number {
   return Math.max(card.archivedAt ?? 0, card.meta?.updatedAt ?? card.createdAt)
 }
 
-/** A spot just right of the archive zone, clear of other cards. */
+/** A spot just right of the archive zone, clear of other cards and of `others` (e.g. notes). */
 export function spotRightOfArchive(
   archive: Rect,
   cards: SessionCard[],
   exclude = new Set<string>(),
-  size: Size = CARD_SIZE
+  size: Size = CARD_SIZE,
+  others: Rect[] = []
 ) {
   return findFreeSpot(
     { x: archive.x + archive.w + 80, y: archive.y },
-    cardObstacles(cards, exclude),
+    [...cardObstacles(cards, exclude), ...others],
     archive,
     size
   )
 }
 
 /** Default spot for a brand-new session (of `size`): right of the rightmost active card. */
-export function spotForNewSession(archive: Rect, cards: SessionCard[], size: Size = CARD_SIZE): Point {
+export function spotForNewSession(
+  archive: Rect,
+  cards: SessionCard[],
+  size: Size = CARD_SIZE,
+  others: Rect[] = []
+): Point {
   const active = cards.filter((c) => !c.archived)
-  if (active.length === 0) return spotRightOfArchive(archive, cards, undefined, size)
+  if (active.length === 0) return spotRightOfArchive(archive, cards, undefined, size, others)
   const rightmost = active.reduce((a, b) => (b.x > a.x ? b : a))
   return findFreeSpot(
     { x: rightmost.x + cardSize(rightmost).w + GAP * 2, y: rightmost.y },
-    cardObstacles(cards),
+    [...cardObstacles(cards), ...others],
     archive,
     size
   )

@@ -1,4 +1,5 @@
 import { createContext, useContext } from 'react'
+import type { BoardNote } from '@shared/types'
 
 export interface BoardActions {
   /** Commits a new title for a card (empty clears the override). */
@@ -9,6 +10,8 @@ export interface BoardActions {
   renameSection(sectionId: string, name: string): void
   /** Expands active cards in place, showing their terminals, or folds them back into cards. */
   expand(sessionIds: string[], expanded: boolean): void
+  /** Saves what's written on a sticky note. */
+  editNote(note: BoardNote, text: string): void
 }
 
 export const BoardActionsContext = createContext<BoardActions | null>(null)
@@ -19,7 +22,7 @@ export function useBoardActions(): BoardActions {
   return ctx
 }
 
-/** Session or section id currently being renamed inline, if any. */
+/** Session, section or note id currently being renamed (or, for a note, written in) inline, if any. */
 export const RenamingContext = createContext<string | null>(null)
 
 /** True while a dragged card hovers over the archive zone. */

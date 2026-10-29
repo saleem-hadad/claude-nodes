@@ -66,6 +66,7 @@ https://github.com/user-attachments/assets/21921a47-2635-4bc4-83f8-166f83134bde
 - **Sessions outlive the app.** Quit Claude Nodes and your sessions keep working. Open it again and they're right where you left them.
 - **New session from context.** Select a few cards and start a session that already knows what they did.
 - **A searchable archive.** Old sessions stack up in one pile. Drag a card out to pick it up again.
+- **Sticky notes.** Peel a note off the pad under the archive and stick it anywhere on the board, for reminders and scratch notes.
 
 ## Get started
 
@@ -90,6 +91,7 @@ To build from source, see [Development](docs/how-it-works.md#development).
 | Group the selection into a section | ⌘G |
 | Archive the selection | ⌫ |
 | Search the archive | Hover the stack and type |
+| New sticky note | Drag one off the pad under the archive |
 
 ## Learn more
 

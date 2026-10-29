@@ -40,14 +40,17 @@ import {
   Sparkles,
   SquareDashed,
   SquareTerminal,
+  StickyNote,
   Trash2,
   BoxSelect,
   Ungroup
 } from 'lucide-react'
 import clsx from 'clsx'
 import type {
+  BoardNote,
   BoardSection,
   BoardSnapshot,
+  FolderColor,
   NodePatch,
   Rect,
   SessionCard,
@@ -92,6 +95,22 @@ import {
   ArchiveZoneNode,
   type ArchiveFlowNode
 } from '@renderer/components/board/ArchiveZoneNode'
+import { NoteNode, type NoteFlowNode } from '@renderer/components/board/NoteNode'
+import { NotePadNode, type NotePadFlowNode } from '@renderer/components/board/NotePadNode'
+import {
+  NOTE_COLOR,
+  NOTE_H,
+  NOTE_SIZE,
+  NOTE_W,
+  NOTEPAD_ID,
+  buildNoteNodes,
+  buildPadNodes,
+  isOnPad,
+  noteObstacles,
+  noteSize,
+  notePadRect,
+  padSheetSpot
+} from '@renderer/components/board/notes'
 import { SelectionBar } from '@renderer/components/board/SelectionBar'
 import { BoardControls } from '@renderer/components/board/BoardControls'
 import { ConfirmDialog, type ConfirmRequest } from '@renderer/components/board/ConfirmDialog'
@@ -103,8 +122,10 @@ import {
 import {
   ARCHIVE_ID,
   CARD_H,
+  CARD_SIZE,
   CARD_W,
   GAP,
+  boundsOf,
   cardSize,
   isExpanded,
   STACK_DEPTH,
@@ -123,6 +144,7 @@ import {
   stackScrollMax,
   stackTop,
   stackZone,
+  truncate,
   type Point,
   type Size
 } from '@renderer/components/board/layout'
@@ -131,9 +153,15 @@ import { focus as focusTerminal } from '@renderer/terminal/registry'
 import { fuzzyMatch } from '@renderer/components/board/fuzzy'
 import '@renderer/components/board/board.css'
 
-type FlowNode = SessionFlowNode | ArchiveFlowNode | SectionFlowNode
+type FlowNode = SessionFlowNode | ArchiveFlowNode | SectionFlowNode | NoteFlowNode | NotePadFlowNode
 
-const nodeTypes = { session: SessionCardNode, archive: ArchiveZoneNode, section: SectionNode }
+const nodeTypes = {
+  session: SessionCardNode,
+  archive: ArchiveZoneNode,
+  section: SectionNode,
+  note: NoteNode,
+  notepad: NotePadNode
+}
 const edgeTypes = { lineage: LineageEdge }
 
 /** Home view when nothing is active: room right of the archive for new cards… */
@@ -157,6 +185,9 @@ const STATUS_COLOR = {
 } as const
 
 const sectionHue = (n: FlowNode) => FOLDER_HUES[(n as SectionFlowNode).data.section.color].backBottom
+const isDraft = (n: FlowNode) => n.type === 'note' && Boolean((n as NoteFlowNode).data.draft)
+/** A note's first line, for naming it in a dialog. */
+const noteExcerpt = (note: BoardNote) => truncate(note.text.trim().split('\n')[0], 60)
 
 export function BoardView({ projectId }: { projectId: string }) {
   const board = useApp((s) => s.board)
@@ -211,7 +242,7 @@ interface Flight {
  * Derives React Flow nodes from the board snapshot while preserving local
  * React Flow state (selection, measurements) and the live position of any node
  * that is mid-drag. Archived cards are placed by the stack, not their stored
- * positions.
+ * positions. `draftId` is the note waiting on top of the note pad.
  */
 function buildNodes(
   board: BoardSnapshot,
@@ -220,7 +251,8 @@ function buildNodes(
   archiveBusy: boolean,
   stack: StackView,
   flights: Map<string, Flight>,
-  now: number
+  now: number,
+  draftId: string
 ): FlowNode[] {
   const prevById = new Map(prev.map((n) => [n.id, n]))
   const archivedCount = board.cards.filter((c) => c.archived).length
@@ -385,7 +417,9 @@ function buildNodes(
   })
 
   const sectionNodes = buildSectionNodes(sectionViews(board.sections, board.cards), prevById, busy)
-  return [archiveNode, ...sectionNodes, ...sessionNodes]
+  const [padNode, draftNode] = buildPadNodes(notePadRect(board.archive), draftId, prevById, busy)
+  const noteNodes = buildNoteNodes(board.notes, prevById, busy)
+  return [archiveNode, padNode, ...sectionNodes, ...sessionNodes, ...noteNodes, draftNode]
 }
 
 interface MenuState {
@@ -402,17 +436,29 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
   const setArchive = useApp((s) => s.setArchive)
   const saveSection = useApp((s) => s.saveSection)
   const removeSection = useApp((s) => s.removeSection)
+  const saveNote = useApp((s) => s.saveNote)
+  const removeNotes = useApp((s) => s.removeNotes)
   const setSelection = useApp((s) => s.setSelection)
   const openTerminal = useApp((s) => s.openTerminal)
   const openPreview = useApp((s) => s.openPreview)
   const openAgents = useApp((s) => s.openAgents)
   const selection = useApp((s) => s.selection)
 
-  const { cards, archive, sections } = board
+  const { cards, archive, sections, notes } = board
   const cardsRef = useRef(cards)
   cardsRef.current = cards
+  const notesRef = useRef(notes)
+  notesRef.current = notes
   const archiveRef = useRef(archive)
   archiveRef.current = archive
+  /** The note pad under the archive. */
+  const pad = useMemo(() => notePadRect(archive), [archive])
+  const padRef = useRef(pad)
+  padRef.current = pad
+  /** The pad's top sheet: the id the next note peeled off it will have. */
+  const [draftId, setDraftId] = useState(() => crypto.randomUUID())
+  const draftIdRef = useRef(draftId)
+  draftIdRef.current = draftId
   /** Sections with their frames and cards. */
   const groups = useMemo(() => sectionViews(sections, cards), [sections, cards])
   const groupsRef = useRef(groups)
@@ -494,6 +540,10 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
   )
   const zoneRef = useRef(zone)
   zoneRef.current = zone
+  /** The archive and the note pad under it, which new cards and notes keep clear of. */
+  const dock = useMemo(() => boundsOf([zone, pad]), [zone, pad])
+  const dockRef = useRef(dock)
+  dockRef.current = dock
 
   const stackView = useMemo<StackView>(() => {
     const results = new Map(stackResults.map((r, slot) => [r.id, { slot, match: r.match }]))
@@ -608,7 +658,7 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
   const [flightTick, setFlightTick] = useState(0)
 
   const [nodes, setNodes] = useState<FlowNode[]>(() =>
-    buildNodes(board, [], busy.current, false, stackView, flights.current, performance.now())
+    buildNodes(board, [], busy.current, false, stackView, flights.current, performance.now(), draftId)
   )
   const nodesRef = useRef(nodes)
   nodesRef.current = nodes
@@ -622,10 +672,11 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
         archiveBusy.current,
         stackView,
         flights.current,
-        performance.now()
+        performance.now(),
+        draftId
       )
     )
-  }, [board, stackView, flightTick])
+  }, [board, stackView, flightTick, draftId])
 
   // A section's corner follows its cards, so one that empties stays where it was.
   useEffect(() => {
@@ -703,6 +754,11 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
 
   const selectedIds = () =>
     nodesRef.current.filter((n) => n.type === 'session' && n.selected).map((n) => n.id)
+  const selectedNoteIds = () =>
+    nodesRef.current.filter((n) => n.type === 'note' && n.selected).map((n) => n.id)
+
+  /** Notes sit on top of cards, so new cards (and notes) keep clear of them. */
+  const notesInTheWay = () => noteObstacles(notesRef.current)
 
   const clearSelection = useCallback(() => {
     setNodes((nds) => nds.map((n) => (n.selected ? { ...n, selected: false } : n)))
@@ -773,10 +829,10 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
       const { expandNewSessions: expanded } = await window.api.settings.get()
       const size = cardSize({ archived: false, expanded })
       const all = cardsRef.current
-      const zone = zoneRef.current
+      const dock = dockRef.current
       const spot = at
-        ? findFreeSpot(at, cardObstacles(all), zone, size)
-        : spotForNewSession(zone, all, size)
+        ? findFreeSpot(at, [...cardObstacles(all), ...notesInTheWay()], dock, size)
+        : spotForNewSession(dock, all, size, notesInTheWay())
       const pos = { x: Math.round(spot.x), y: Math.round(spot.y) }
       // A card started inside a section's frame joins it.
       const joins = sectionId ?? sectionAt(pos, groupsRef.current)
@@ -815,7 +871,7 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
 
   const restoreCard = useCallback(
     (sessionId: string) => {
-      const spot = spotRightOfArchive(zoneRef.current, cardsRef.current, new Set([sessionId]))
+      const spot = spotRightOfArchive(dockRef.current, cardsRef.current, new Set([sessionId]), CARD_SIZE, notesInTheWay())
       patchCards([
         { sessionId, x: Math.round(spot.x), y: Math.round(spot.y), archived: false }
       ])
@@ -889,7 +945,7 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
       const { frame, positions } = layoutGroup(
         targets,
         cardObstacles(rest.filter((c) => !c.archived)),
-        [zoneRef.current, ...frames]
+        [dockRef.current, ...frames]
       )
       // Claude names it after its sessions; a group of fresh sessions and shells has nothing to go on.
       const nameable = targets.filter((c) => !isTerminal(c) && (c.title || c.meta))
@@ -910,7 +966,7 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
       const empty = frameAround(p, [])
       const obstacles = [
         ...cardObstacles(cardsRef.current.filter((c) => !c.archived)),
-        zoneRef.current,
+        dockRef.current,
         ...groupsRef.current.map((g) => g.frame)
       ]
       addSection(
@@ -928,7 +984,8 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
       if (!card || !group) return
       const obstacles = [
         ...cardObstacles(cardsRef.current.filter((c) => !c.archived), new Set([sessionId])),
-        zoneRef.current,
+        ...notesInTheWay(),
+        dockRef.current,
         ...groupsRef.current.filter((g) => g !== group).map((g) => g.frame)
       ]
       const spot = findFreeSpot({ x: group.frame.x + group.frame.w + GAP, y: card.y }, obstacles, group.frame)
@@ -936,6 +993,87 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
       ensureVisible(spot)
     },
     [patchCards, ensureVisible]
+  )
+
+  // ---- notes -----------------------------------------------------------------
+
+  /** Saves a new, empty note at `p` and starts writing in it. */
+  const addNote = useCallback(
+    (p: Point, id: string = crypto.randomUUID()) => {
+      saveNote({ id, text: '', color: NOTE_COLOR, x: Math.round(p.x), y: Math.round(p.y), createdAt: Date.now() })
+      setRenaming(id)
+    },
+    [saveNote]
+  )
+
+  /**
+   * Peels the pad's top sheet off as a new note at `p`, and a fresh sheet takes
+   * its place. Dropped off a drag it stays put; otherwise it glides over to `p`.
+   */
+  const peelNote = useCallback(
+    (p: Point) => {
+      const id = draftIdRef.current
+      setDraftId(crypto.randomUUID())
+      addNote(p, id)
+    },
+    [addNote]
+  )
+
+  /** A spot for a note near `p`, clear of cards, other notes, the archive and the pad. */
+  const freeNoteSpot = useCallback(
+    (p: Point) =>
+      findFreeSpot(p, [...cardObstacles(cardsRef.current), ...notesInTheWay()], dockRef.current, NOTE_SIZE),
+    []
+  )
+
+  /** A click on the pad peels a note off into a free spot beside it. */
+  const noteBesidePad = useCallback(() => {
+    const pad = padRef.current
+    const spot = freeNoteSpot({ x: pad.x + pad.w + GAP, y: padSheetSpot(pad).y })
+    peelNote(spot)
+    ensureVisible(spot, NOTE_SIZE)
+  }, [freeNoteSpot, peelNote, ensureVisible])
+
+  /** A new note centred on `p`, or near it when that's taken. */
+  const createNoteAt = useCallback(
+    (p: Point) => {
+      const spot = freeNoteSpot({ x: p.x - NOTE_W / 2, y: p.y - NOTE_H / 2 })
+      addNote(spot)
+      ensureVisible(spot, NOTE_SIZE)
+    },
+    [freeNoteSpot, addNote, ensureVisible]
+  )
+
+  const recolorNotes = useCallback(
+    (ids: string[], color: FolderColor) => {
+      for (const note of notesRef.current) if (ids.includes(note.id)) saveNote({ ...note, color })
+    },
+    [saveNote]
+  )
+
+  /** Deletes notes. Resolves false if the user kept them after all. */
+  const deleteNotes = useCallback(
+    async (ids: string[]) => {
+      const targets = notesRef.current.filter((n) => ids.includes(n.id))
+      if (targets.length === 0) return true
+      // An empty note has nothing to lose; one with writing on it asks first.
+      const written = targets.filter((n) => n.text.trim())
+      if (written.length > 0) {
+        const ok = await confirm({
+          title: targets.length === 1 ? 'Delete note?' : `Delete ${targets.length} notes?`,
+          message:
+            targets.length === 1
+              ? `“${noteExcerpt(written[0])}” will be deleted from this board.`
+              : 'They will be deleted from this board, along with what’s written on them.',
+          confirmLabel: 'Delete',
+          danger: true
+        })
+        if (!ok) return false
+      }
+      removeNotes(targets.map((n) => n.id))
+      return true
+    },
+    [confirm, removeNotes]
   )
 
   const selectCards = useCallback((ids: Set<string>) => {
@@ -956,7 +1094,7 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
       const { expandNewSessions: expanded } = await window.api.settings.get()
       const size = cardSize({ archived: false, expanded })
       const all = cardsRef.current
-      const zone = zoneRef.current
+      const zone = dockRef.current
       const sourceIds = new Set((merge ?? []).map((s) => s.sessionId))
       const sourceCards = all.filter((c) => sourceIds.has(c.sessionId))
       // The merged card sits centered below its parents so lineage edges fan in.
@@ -966,15 +1104,15 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
               x: sourceCards.reduce((sum, c) => sum + c.x, 0) / sourceCards.length,
               y: Math.max(...sourceCards.map((c) => c.y + cardSize(c).h)) + 96
             }
-          : spotForNewSession(zone, all, size)
-      // Merged sessions are active: never start them inside the archive.
+          : spotForNewSession(zone, all, size, notesInTheWay())
+      // Merged sessions are active: never start them inside the archive (or on the note pad).
       if (intersects(cardRect(preferred, size), zone, GAP)) {
         preferred = {
           x: zone.x + zone.w + 80,
           y: Math.min(Math.max(preferred.y, zone.y), zone.y + zone.h - size.h)
         }
       }
-      const spot = findFreeSpot(preferred, cardObstacles(all), zone, size)
+      const spot = findFreeSpot(preferred, [...cardObstacles(all), ...notesInTheWay()], zone, size)
       const pos = { x: Math.round(spot.x), y: Math.round(spot.y) }
 
       const card = await window.api.sessions.create(projectId, {
@@ -1001,9 +1139,15 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
       renameSection: (sectionId, name) => {
         const section = groupsRef.current.find((g) => g.section.id === sectionId)?.section
         if (section) saveSection({ ...section, name })
+      },
+      editNote: (note, text) => {
+        const next = { ...note, text }
+        // Typing outlives a board closed mid-note (⌘W): save it all the same.
+        if (useApp.getState().board?.project.id === projectId) saveNote(next)
+        else window.api.board.saveNote(projectId, next)
       }
     }),
-    [patchCards, saveSection, expandCards]
+    [patchCards, saveSection, expandCards, saveNote, projectId]
   )
 
   // ---- React Flow handlers -------------------------------------------------
@@ -1021,6 +1165,8 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
       setMovingArchive(true)
       lastArchivePos.current = { ...node.position }
       for (const c of cardsRef.current) if (c.archived) busy.current.add(c.sessionId)
+      busy.current.add(NOTEPAD_ID)
+      busy.current.add(draftIdRef.current)
       return
     }
     if (node.type === 'section') {
@@ -1037,7 +1183,7 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
     }
     dragStart.current.clear()
     for (const n of dragged) {
-      if (n.type !== 'session') continue
+      if (n.type !== 'session' && n.type !== 'note') continue
       busy.current.add(n.id)
       dragStart.current.set(n.id, { ...n.position })
     }
@@ -1051,10 +1197,12 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
       const dy = node.position.y - last.y
       if (dx === 0 && dy === 0) return
       lastArchivePos.current = { ...node.position }
-      // Archived cards travel with the archive, like objects inside a frame.
+      // Archived cards travel with the archive, like objects inside a frame, and the note pad under it too.
       setNodes((nds) =>
         nds.map((n) =>
-          n.type === 'session' && (n as SessionFlowNode).data.card.archived
+          (n.type === 'session' && (n as SessionFlowNode).data.card.archived) ||
+          n.id === NOTEPAD_ID ||
+          isDraft(n)
             ? { ...n, position: { x: n.position.x + dx, y: n.position.y + dy } }
             : n
         )
@@ -1086,9 +1234,15 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
         isInArchive(n.position, zone, cardSize((n as SessionFlowNode).data.card))
     )
     setArchiveHot(overArchive)
-    const card = (node as SessionFlowNode).data.card
+    // Notes don't join sections: the card leading the drag picks the section the cards land in.
+    const lead = (node.type === 'session' ? node : dragged.find((n) => n.type === 'session')) as
+      | SessionFlowNode
+      | undefined
+    const card = lead?.data.card
     setHotSection(
-      overArchive ? null : sectionAt(node.position, groupsRef.current, card.sectionId, cardSize(card))
+      overArchive || !lead
+        ? null
+        : sectionAt(lead.position, groupsRef.current, card!.sectionId, cardSize(card))
     )
   }, [])
 
@@ -1139,11 +1293,29 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
         return
       }
 
+      const pad = padRef.current
+      // The pad's top sheet: dropped on the board it's a new note, and dropped
+      // back on the pad (or on the archive) it goes back on top.
+      if (isDraft(node)) {
+        busy.current.delete(node.id)
+        dragStart.current.clear()
+        if (isOnPad(node.position, pad) || isInArchive(node.position, zoneRef.current, NOTE_SIZE)) {
+          const home = padSheetSpot(pad)
+          setNodes((nds) => nds.map((n) => (n.id === node.id ? { ...n, position: home } : n)))
+        } else {
+          peelNote(node.position)
+        }
+        return
+      }
+
       const zone = zoneRef.current
       const byId = new Map(cardsRef.current.map((c) => [c.sessionId, c]))
       const moved = dragged.filter((n) => n.type === 'session' && byId.has(n.id))
+      const notesById = new Map(notesRef.current.map((n) => [n.id, n]))
+      const movedNotes = dragged.filter((n) => n.type === 'note' && notesById.has(n.id))
 
-      // Terminals can't be archived: one dropped on the archive goes back to where it was.
+      // Terminals and notes can't be archived: one dropped on the archive goes
+      // back to where it was, as does a note dropped on its pad.
       const bounced = new Map<string, Point>()
       for (const n of moved) {
         const card = byId.get(n.id)!
@@ -1151,13 +1323,21 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
           bounced.set(n.id, dragStart.current.get(n.id) ?? { x: card.x, y: card.y })
         }
       }
+      for (const n of movedNotes) {
+        const note = notesById.get(n.id)!
+        const size = noteSize(note)
+        if (isInArchive(n.position, zone, size) || isOnPad(n.position, pad, size)) {
+          bounced.set(n.id, dragStart.current.get(n.id) ?? { x: note.x, y: note.y })
+        }
+      }
       if (bounced.size > 0) {
         setNodes((nds) => nds.map((n) => (bounced.has(n.id) ? { ...n, position: bounced.get(n.id)! } : n)))
       }
 
-      // Cards dragged together land in the section under the one being dragged (it's the one highlighted).
-      const primary = byId.get(node.id)
-      const target = sectionAt(node.position, groupsRef.current, primary?.sectionId, cardSize(primary))
+      // Cards dragged together land in the section under the card leading the drag (it's the one highlighted).
+      const lead = node.type === 'session' ? node : moved[0]
+      const primary = lead && byId.get(lead.id)
+      const target = lead ? sectionAt(lead.position, groupsRef.current, primary?.sectionId, cardSize(primary)) : null
       const patches: NodePatch[] = moved
         .filter((n) => !bounced.has(n.id))
         .map((n) => {
@@ -1177,7 +1357,7 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
         .map(({ card }) => card)
 
       const release = () => {
-        for (const n of moved) busy.current.delete(n.id)
+        for (const n of [...moved, ...movedNotes]) busy.current.delete(n.id)
         dragStart.current.clear()
       }
 
@@ -1191,13 +1371,22 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
       }
 
       patchCards(patches)
+      for (const n of movedNotes) {
+        if (bounced.has(n.id)) continue
+        saveNote({ ...notesById.get(n.id)!, x: Math.round(n.position.x), y: Math.round(n.position.y) })
+      }
       release()
     },
-    [confirmStopRunning, patchCards, setArchive, saveSection]
+    [confirmStopRunning, patchCards, setArchive, saveSection, saveNote, peelNote]
   )
 
   const onNodeClick = useCallback(
     (e: ReactMouseEvent, node: FlowNode) => {
+      // A click on the pad peels a note off beside it; the second click of a double-click doesn't.
+      if (isDraft(node)) {
+        if (e.detail === 1) noteBesidePad()
+        return
+      }
       if (node.type !== 'session') return
       // The top of the stack fans it open rather than opening one card.
       if ((node as SessionFlowNode).data.card.archived && !stackViewRef.current.results.has(node.id)) {
@@ -1219,13 +1408,17 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
         openCard(node.id)
       }
     },
-    [openCard, renaming, openStack]
+    [openCard, renaming, openStack, noteBesidePad]
   )
 
   const onNodeDoubleClick = useCallback((e: ReactMouseEvent, node: FlowNode) => {
     // Only a section's header takes the pointer, so this is a double-click on it.
     if (node.type === 'section') {
       setRenaming(node.id)
+      return
+    }
+    if (node.type === 'note') {
+      if (!isDraft(node)) setRenaming(node.id)
       return
     }
     if (node.type !== 'session') return
@@ -1261,13 +1454,15 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
   const fitActive = useCallback(
     (duration = 320) => {
       const active = cardsRef.current.filter((c) => !c.archived).map((c) => ({ id: c.sessionId }))
-      if (active.length > 0) {
+      const notes = notesRef.current.map((n) => ({ id: n.id }))
+      if (active.length + notes.length > 0) {
         // Section frames too, so their headers aren't cut off.
         const frames = groupsRef.current.filter((g) => g.members.length > 0).map((g) => ({ id: g.section.id }))
-        rf.fitView({ nodes: [...active, ...frames], padding: 0.2, maxZoom: 1, duration })
+        rf.fitView({ nodes: [...active, ...frames, ...notes], padding: 0.2, maxZoom: 1, duration })
         return
       }
-      const a = zoneRef.current
+      // The archive and the note pad under it.
+      const a = dockRef.current
       rf.fitBounds(
         { x: a.x, y: a.y, width: a.w + HOME_FREE_SPACE, height: Math.min(a.h, HOME_ARCHIVE_ROWS_H) },
         { padding: 0.06, duration }
@@ -1279,7 +1474,7 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
   const onPaneDoubleClick = (e: ReactMouseEvent) => {
     if (!(e.target as Element).classList.contains('react-flow__pane')) return
     const p = rf.screenToFlowPosition({ x: e.clientX, y: e.clientY })
-    if (containsPoint(zoneRef.current, p)) return
+    if (containsPoint(dockRef.current, p)) return
     createSession({ x: p.x - CARD_W / 2, y: p.y - CARD_H / 2 })
   }
 
@@ -1287,7 +1482,7 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
     (e: ReactMouseEvent | MouseEvent) => {
       e.preventDefault()
       const p = rf.screenToFlowPosition({ x: e.clientX, y: e.clientY })
-      const inArchive = containsPoint(zoneRef.current, p)
+      const inArchive = containsPoint(dockRef.current, p)
       const inSection = groupsRef.current.some((g) => containsPoint(g.frame, p))
       setMenu({
         x: e.clientX,
@@ -1313,6 +1508,12 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
             disabled: inArchive || inSection,
             onSelect: () => createSectionAt(p)
           },
+          {
+            label: 'New note here',
+            icon: <StickyNote />,
+            disabled: inArchive,
+            onSelect: () => createNoteAt(p)
+          },
           'separator',
           { label: 'Select all active', icon: <BoxSelect />, hint: '⌘A', onSelect: selectAllActive },
           { label: 'Zoom to fit', icon: <Maximize />, onSelect: fitActive },
@@ -1324,7 +1525,7 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
         ]
       })
     },
-    [rf, createSession, createTerminal, createSectionAt, selectAllActive, fitActive]
+    [rf, createSession, createTerminal, createSectionAt, createNoteAt, selectAllActive, fitActive]
   )
 
   const sectionMenu = useCallback(
@@ -1447,9 +1648,50 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
     [cardOpenItems, confirm, removeCard, cardSectionItems]
   )
 
+  /** A note's menu acts on it, or on the selected notes when it's one of them. */
+  const noteMenu = useCallback(
+    (note: BoardNote): MenuItem[] => {
+      const sel = selectedNoteIds()
+      const ids = sel.includes(note.id) && sel.length > 1 ? sel : [note.id]
+      return [
+        { label: 'Edit', icon: <PencilLine />, hint: '↩', onSelect: () => setRenaming(note.id) },
+        {
+          custom: (
+            <ColorSwatches
+              value={note.color}
+              label="Note colour"
+              onPick={(color) => {
+                setMenu(null)
+                recolorNotes(ids, color)
+              }}
+            />
+          )
+        },
+        'separator',
+        {
+          label: ids.length > 1 ? `Delete ${ids.length} notes` : 'Delete note',
+          icon: <Trash2 />,
+          hint: '⌫',
+          danger: true,
+          onSelect: () => deleteNotes(ids)
+        }
+      ]
+    },
+    [recolorNotes, deleteNotes]
+  )
+
   const onNodeContextMenu = useCallback(
     (e: ReactMouseEvent, node: FlowNode) => {
       e.preventDefault()
+      if (node.type === 'notepad' || isDraft(node)) {
+        const items: MenuItem[] = [{ label: 'New note', icon: <StickyNote />, onSelect: noteBesidePad }]
+        setMenu({ x: e.clientX, y: e.clientY, items })
+        return
+      }
+      if (node.type === 'note') {
+        setMenu({ x: e.clientX, y: e.clientY, items: noteMenu((node as NoteFlowNode).data.note) })
+        return
+      }
       if (node.type === 'section') {
         const group = groupsRef.current.find((g) => g.section.id === node.id)
         if (group) setMenu({ x: e.clientX, y: e.clientY, items: sectionMenu(group) })
@@ -1520,7 +1762,9 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
       removeCard,
       terminalMenu,
       sectionMenu,
-      cardSectionItems
+      cardSectionItems,
+      noteMenu,
+      noteBesidePad
     ]
   )
 
@@ -1535,7 +1779,8 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
     clearSelection,
     openCard,
     expandCards,
-    closeStack
+    closeStack,
+    deleteNotes
   })
   latest.current = {
     createSession,
@@ -1546,7 +1791,8 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
     clearSelection,
     openCard,
     expandCards,
-    closeStack
+    closeStack,
+    deleteNotes
   }
 
   useEffect(() => {
@@ -1556,11 +1802,12 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
       const target = e.target as HTMLElement | null
       if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
       const sel = selectedIds()
+      const noteSel = selectedNoteIds()
       const fns = latest.current
 
       if (e.key === 'Escape') {
         if (stackViewRef.current.open) fns.closeStack()
-        if (sel.length) fns.clearSelection()
+        if (sel.length || noteSel.length) fns.clearSelection()
       } else if (e.key.toLowerCase() === 'a' && e.metaKey && !e.shiftKey && !e.altKey) {
         e.preventDefault()
         fns.selectAllActive()
@@ -1570,13 +1817,19 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
           fns.groupCards(sel)
         }
       } else if ((e.key === 'Backspace' || e.key === 'Delete') && !e.metaKey && !e.altKey) {
-        if (sel.length) {
+        if (sel.length || noteSel.length) {
           e.preventDefault()
-          fns.archiveCards(sel)
+          // Selected notes are deleted and cards archived; keeping the notes keeps the cards too.
+          void fns.deleteNotes(noteSel).then((ok) => {
+            if (ok) return fns.archiveCards(sel)
+          })
         }
       } else if (e.key === 'Enter' && !e.metaKey && !e.shiftKey && sel.length === 1) {
         e.preventDefault()
         fns.openCard(sel[0])
+      } else if (e.key === 'Enter' && !e.metaKey && !e.shiftKey && sel.length === 0 && noteSel.length === 1) {
+        e.preventDefault()
+        setRenaming(noteSel[0])
       } else if (e.key.toLowerCase() === 'n' && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault()
         fns.createSession()
@@ -1703,14 +1956,15 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
                       zoomable
                       nodeBorderRadius={6}
                       nodeColor={(n) => {
-                        if (n.type === 'archive') return 'var(--archive-bg)'
+                        if (n.type === 'archive' || n.type === 'notepad') return 'var(--archive-bg)'
                         // A faint wash of the section's colour (hex + alpha).
                         if (n.type === 'section') return `${sectionHue(n)}24`
+                        if (n.type === 'note') return FOLDER_HUES[(n as NoteFlowNode).data.note.color].frontTop
                         const card = (n as SessionFlowNode).data.card
                         return isTerminal(card) ? 'var(--text-tertiary)' : STATUS_COLOR[card.status]
                       }}
                       nodeStrokeColor={(n) => {
-                        if (n.type === 'archive') return 'var(--archive-border)'
+                        if (n.type === 'archive' || n.type === 'notepad') return 'var(--archive-border)'
                         if (n.type === 'section') return sectionHue(n)
                         return 'transparent'
                       }}

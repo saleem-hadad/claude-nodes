@@ -119,6 +119,19 @@ export interface BoardSection {
   createdAt: number
 }
 
+/** A sticky note on the board: a reminder or scratch text, with no session behind it. */
+export interface BoardNote {
+  id: string
+  text: string
+  color: FolderColor
+  x: number
+  y: number
+  /** Size of the note, once it has been resized. */
+  w?: number
+  h?: number
+  createdAt: number
+}
+
 /**
  * A subagent a session started with Claude's Agent tool. Claude Code keeps its
  * transcript beside the session's, in <session id>/subagents/agent-<id>.jsonl.
@@ -192,6 +205,7 @@ export interface BoardSnapshot {
   cards: SessionCard[]
   archive: Rect
   sections: BoardSection[]
+  notes: BoardNote[]
   viewport?: Viewport
 }
 

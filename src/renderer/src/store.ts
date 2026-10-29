@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type {
   AgentInfo,
+  BoardNote,
   BoardSection,
   BoardSnapshot,
   NodePatch,
@@ -55,6 +56,9 @@ interface AppState {
   saveSection(section: BoardSection): void
   /** Deletes a section; its cards stay on the board, ungrouped. */
   removeSection(sectionId: string): void
+  /** Creates or updates a sticky note and persists it. */
+  saveNote(note: BoardNote): void
+  removeNotes(noteIds: string[]): void
   setStatus(sessionId: string, status: SessionStatus, live: boolean): void
   setAgentStatus(sessionId: string, agentId: string, status: SessionStatus): void
   setUsage(sessionId: string, usage: SessionUsage): void
@@ -215,6 +219,27 @@ export const useApp = create<AppState>((set, get) => ({
       }
     })
     window.api.board.removeSection(board.project.id, sectionId)
+  },
+
+  saveNote(note) {
+    const board = get().board
+    if (!board) return
+    const exists = board.notes.some((n) => n.id === note.id)
+    set({
+      board: {
+        ...board,
+        notes: exists ? board.notes.map((n) => (n.id === note.id ? note : n)) : [...board.notes, note]
+      }
+    })
+    window.api.board.saveNote(board.project.id, note)
+  },
+
+  removeNotes(noteIds) {
+    const board = get().board
+    if (!board || noteIds.length === 0) return
+    const gone = new Set(noteIds)
+    set({ board: { ...board, notes: board.notes.filter((n) => !gone.has(n.id)) } })
+    window.api.board.removeNotes(board.project.id, noteIds)
   },
 
   setStatus(sessionId, status, live) {

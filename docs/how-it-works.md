@@ -63,6 +63,12 @@ The agents of the current run (still running, or finished since your last prompt
 
 An agent that ends its turn with a command still running in the background isn't done: the command wakes it again when it finishes, so it stays 🟠 meanwhile.
 
+## Notes
+
+Each board has a pad of sticky notes under the archive, and it moves with the archive. Drag the top note off the pad and drop it anywhere on the board, or click the pad for one beside it. A new note opens for writing. Enter starts a new line, and Escape, ⌘Enter or a click away puts the note down. Double-click a note (or select it and press Enter) to write in it again. Drag it to move it, and drag a selected note's corners to resize it. Right-click it to change its colour or delete it. Deleting a note that has writing on it asks first.
+
+Notes sit on top of cards. They don't join sections or the archive: a note dropped on the archive or the pad goes back where it was.
+
 ## Cards
 
 Cards are read from Claude Code's transcripts in `~/.claude/projects/<encoded-repo-path>/`. Titles use your custom title first, then Claude's generated title, then the first prompt. Parsing is incremental and cached, so large histories load quickly.
@@ -75,7 +81,7 @@ This makes one Claude request per selected session, so it counts toward your Cla
 
 ## Your data
 
-Transcripts stay where Claude Code keeps them. The app stores only the board layout (projects, card positions, sections, archive, custom titles and lineage) and its settings (theme) in `~/Library/Application Support/Claude Nodes/state.json`. *Remove from board* hides a card and never deletes a transcript.
+Transcripts stay where Claude Code keeps them. The app stores only the board layout (projects, card positions, sections, notes, archive, custom titles and lineage) and its settings (theme) in `~/Library/Application Support/Claude Nodes/state.json`. *Remove from board* hides a card and never deletes a transcript.
 
 The session host keeps its socket and log in the `host` folder next to it. Only your user can open the folder, which matters because anything that can connect to the socket can start processes as you.
 
@@ -100,6 +106,9 @@ The session host keeps its socket and log in the `host` folder next to it. Only 
 | | Archive the selection | ⌫ |
 | | Search the archive | Hover the stack and type · Esc |
 | | Rename a card | Double-click its title |
+| | New note | Drag one off the pad under the archive · click the pad · right-click › New note here |
+| | Write in a note | Double-click it · Enter |
+| | Delete the selected notes | ⌫ |
 | | Fan out a card's agents | Point at the deck under it · click to pin |
 | | Pan · zoom | Two-finger scroll, Space-drag or middle-drag · pinch |
 | Terminal | Newline in Claude's prompt | ⇧Enter |
@@ -135,7 +144,7 @@ src/
     store.ts      state.json in the app's userData directory
   renderer/src/
     views/        ProjectsView (folders) and BoardView (canvas)
-    components/   title bar, folder icon, board cards, agent decks, sections, archive stack, merge dialog, lineage edges
+    components/   title bar, folder icon, board cards, agent decks, sections, archive stack, notes and their pad, merge dialog, lineage edges
     terminal/     xterm.js registry, TerminalModal, TranscriptPreview, AgentViewer
 ```
 
