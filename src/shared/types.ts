@@ -195,6 +195,8 @@ export interface CreateSessionOptions {
   /** First message sent to the new session (used by the merge feature). */
   initialPrompt?: string
   parents?: string[]
+  /** Starts the card expanded on the board. */
+  expanded?: boolean
 }
 
 export interface SummaryResult {
@@ -249,6 +251,8 @@ export type ThemePreference = 'system' | 'light' | 'dark'
 /** App-wide preferences, persisted with the rest of the state. */
 export interface AppSettings {
   theme: ThemePreference
+  /** New sessions start expanded on the board, so closing their window leaves the terminal showing. */
+  expandNewSessions: boolean
 }
 
 /**

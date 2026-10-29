@@ -383,6 +383,7 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
         title: opts.name?.trim() || undefined,
         parents: !terminal && opts.parents?.length ? opts.parents : undefined,
         createdByApp: true,
+        expanded: opts.expanded || undefined,
         createdAt: Date.now()
       }
       board.nodes[sessionId] = node

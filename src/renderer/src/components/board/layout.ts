@@ -175,23 +175,30 @@ export function stackRank(card: SessionCard): number {
 }
 
 /** A spot just right of the archive zone, clear of other cards. */
-export function spotRightOfArchive(archive: Rect, cards: SessionCard[], exclude = new Set<string>()) {
+export function spotRightOfArchive(
+  archive: Rect,
+  cards: SessionCard[],
+  exclude = new Set<string>(),
+  size: Size = CARD_SIZE
+) {
   return findFreeSpot(
     { x: archive.x + archive.w + 80, y: archive.y },
     cardObstacles(cards, exclude),
-    archive
+    archive,
+    size
   )
 }
 
-/** Default spot for a brand-new session: right of the rightmost active card. */
-export function spotForNewSession(archive: Rect, cards: SessionCard[]): Point {
+/** Default spot for a brand-new session (of `size`): right of the rightmost active card. */
+export function spotForNewSession(archive: Rect, cards: SessionCard[], size: Size = CARD_SIZE): Point {
   const active = cards.filter((c) => !c.archived)
-  if (active.length === 0) return spotRightOfArchive(archive, cards)
+  if (active.length === 0) return spotRightOfArchive(archive, cards, undefined, size)
   const rightmost = active.reduce((a, b) => (b.x > a.x ? b : a))
   return findFreeSpot(
     { x: rightmost.x + cardSize(rightmost).w + GAP * 2, y: rightmost.y },
     cardObstacles(cards),
-    archive
+    archive,
+    size
   )
 }
 

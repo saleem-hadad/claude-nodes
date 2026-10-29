@@ -45,6 +45,73 @@
   font-size: var(--text-sm);
 }
 
+.settings-group + .settings-group {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 0.5px solid var(--separator);
+}
+
+/* A setting on the left, its control on the right. */
+.settings-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.settings-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.settings-row-hint {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+/* A macOS-style switch drawn over the native checkbox, which keeps its keyboard handling. */
+.settings-switch {
+  position: relative;
+  flex: none;
+  width: 32px;
+  height: 18px;
+  margin: 1px 0 0;
+  border-radius: 9px;
+  background: var(--bg-pressed);
+  box-shadow: inset 0 0 0 0.5px var(--border);
+  appearance: none;
+  cursor: pointer;
+  transition: background var(--dur-fast) ease;
+}
+.settings-switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform var(--dur-fast) ease;
+}
+.settings-switch:checked {
+  background: var(--accent);
+  box-shadow: none;
+}
+.settings-switch:checked::after {
+  transform: translateX(14px);
+}
+.settings-switch:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.settings-switch:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
 /* Theme tiles */
 .settings-themes {
   display: flex;

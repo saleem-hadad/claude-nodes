@@ -769,19 +769,22 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
 
   const createSession = useCallback(
     async (at?: Point, kind: SessionKind = 'claude', sectionId?: string) => {
+      // Started expanded, the card takes the terminal over when its window closes.
+      const { expandNewSessions: expanded } = await window.api.settings.get()
+      const size = cardSize({ archived: false, expanded })
       const all = cardsRef.current
       const zone = zoneRef.current
       const spot = at
-        ? findFreeSpot(at, cardObstacles(all), zone)
-        : spotForNewSession(zone, all)
+        ? findFreeSpot(at, cardObstacles(all), zone, size)
+        : spotForNewSession(zone, all, size)
       const pos = { x: Math.round(spot.x), y: Math.round(spot.y) }
       // A card started inside a section's frame joins it.
       const joins = sectionId ?? sectionAt(pos, groupsRef.current)
       try {
-        const card = await window.api.sessions.create(projectId, { ...pos, kind })
+        const card = await window.api.sessions.create(projectId, { ...pos, kind, expanded })
         upsertCard(card)
         if (joins) patchCards([{ sessionId: card.sessionId, sectionId: joins }])
-        ensureVisible(pos)
+        ensureVisible(pos, size)
         openTerminal(card.sessionId)
       } catch (err) {
         const what = kind === 'terminal' ? 'a terminal' : 'a session'
@@ -950,6 +953,8 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
 
   const onMergeStart = useCallback(
     async ({ name, initialPrompt, parents }: MergeStartOptions) => {
+      const { expandNewSessions: expanded } = await window.api.settings.get()
+      const size = cardSize({ archived: false, expanded })
       const all = cardsRef.current
       const zone = zoneRef.current
       const sourceIds = new Set((merge ?? []).map((s) => s.sessionId))
@@ -961,27 +966,28 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
               x: sourceCards.reduce((sum, c) => sum + c.x, 0) / sourceCards.length,
               y: Math.max(...sourceCards.map((c) => c.y + cardSize(c).h)) + 96
             }
-          : spotForNewSession(zone, all)
+          : spotForNewSession(zone, all, size)
       // Merged sessions are active: never start them inside the archive.
-      if (intersects(cardRect(preferred), zone, GAP)) {
+      if (intersects(cardRect(preferred, size), zone, GAP)) {
         preferred = {
           x: zone.x + zone.w + 80,
-          y: Math.min(Math.max(preferred.y, zone.y), zone.y + zone.h - CARD_H)
+          y: Math.min(Math.max(preferred.y, zone.y), zone.y + zone.h - size.h)
         }
       }
-      const spot = findFreeSpot(preferred, cardObstacles(all), zone)
+      const spot = findFreeSpot(preferred, cardObstacles(all), zone, size)
       const pos = { x: Math.round(spot.x), y: Math.round(spot.y) }
 
       const card = await window.api.sessions.create(projectId, {
         ...pos,
         name,
         initialPrompt,
-        parents
+        parents,
+        expanded
       })
       upsertCard(card)
       setMerge(null)
       clearSelection()
-      ensureVisible(pos)
+      ensureVisible(pos, size)
       openTerminal(card.sessionId)
     },
     [merge, projectId, upsertCard, clearSelection, ensureVisible, openTerminal]
