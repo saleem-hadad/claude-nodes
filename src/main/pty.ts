@@ -58,6 +58,8 @@ export interface SpawnOptions {
   resume: boolean
   name?: string
   initialPrompt?: string
+  /** More `claude` options, such as an action run's tools. A terminal ignores them. */
+  extraArgs?: string[]
   cols?: number
   rows?: number
 }
@@ -325,6 +327,7 @@ function commandFor(opts: SpawnOptions): { file: string; args: string[]; env: Re
   const args = opts.resume ? ['--resume', opts.sessionId] : ['--session-id', opts.sessionId]
   if (opts.name) args.push('--name', opts.name)
   args.push('--permission-mode', 'acceptEdits')
+  if (opts.extraArgs) args.push(...opts.extraArgs)
   args.push('--settings', hookSettings())
   if (opts.initialPrompt) args.push(opts.initialPrompt)
   return { file: requireClaude(), args, env: spawnEnv(hookEnv(opts.sessionId)) }

@@ -6,6 +6,7 @@ import type {
   BoardSnapshot,
   NodePatch,
   Project,
+  ProjectAction,
   ProjectGroup,
   ProjectStats,
   Rect,
@@ -66,6 +67,9 @@ interface AppState {
   refreshGit(): Promise<void>
   openDiff(): void
   closeDiff(): void
+  /** Adds one of a project's actions, or replaces it, and persists it. */
+  saveAction(projectId: string, action: ProjectAction): Promise<void>
+  removeAction(projectId: string, actionId: string): Promise<void>
 
   openTerminal(sessionId: string): void
   closeTerminal(): void
@@ -309,10 +313,27 @@ export const useApp = create<AppState>((set, get) => ({
   closeAgents: () => set({ agentView: null }),
   openDiff: () => set({ diffOpen: true }),
   closeDiff: () => set({ diffOpen: false }),
+
+  async saveAction(projectId, action) {
+    setProject(await window.api.actions.save(projectId, action))
+  },
+
+  async removeAction(projectId, actionId) {
+    setProject(await window.api.actions.remove(projectId, actionId))
+  },
   setSelection: (ids) => set({ selection: ids }),
   openSettings: () => set({ settingsOpen: true }),
   closeSettings: () => set({ settingsOpen: false })
 }))
+
+/** Puts a project the main process changed into the project list and the open board. */
+function setProject(project: Project) {
+  const { projects, board } = useApp.getState()
+  useApp.setState({
+    projects: projects.map((p) => (p.id === project.id ? project : p)),
+    board: board?.project.id === project.id ? { ...board, project } : board
+  })
+}
 
 /** The card for a session on the current board, if any. */
 export function useCard(sessionId: string | null): SessionCard | undefined {

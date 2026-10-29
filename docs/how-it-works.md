@@ -79,6 +79,18 @@ For each selected session the app runs `claude -p --resume <id> --fork-session -
 
 This makes one Claude request per selected session, so it counts toward your Claude usage like any other prompt.
 
+## Actions
+
+The Actions dock on the board's right edge holds a project's buttons. A project starts with none. **Add action** asks what the button should do, with a few examples to start from. Claude (`claude -p`, Sonnet, able to read the repo but not change it) drafts a name, an icon, the prompt each press runs, and the permission rules it needs, such as `Bash(git pull *)`. You review and edit all four before saving. Actions are stored with the project in `state.json`, not in the repo.
+
+Pressing a button starts an ordinary session card on the action's prompt, in a section named after it. The run gets:
+
+- the action's permission rules through `--allowedTools`. Anything else stops the run to ask you, and its card turns 🔴.
+- the board tools, through `--mcp-config`: `list_sessions` and `archive_sessions`. They're served by the app on 127.0.0.1, with a token for each run that covers only its own project. The token sits in a file only you can read (`runs/` in the app's data folder), so it never shows up in a process listing.
+- a note asking it to work without stopping to chat, to ask with AskUserQuestion when it needs you, and to end with a one-line summary.
+
+When the run's turn ends, its card and section leave the board, its transcript is hidden like a removed card's, and the summary shows as a notice. If you type into a run, or interrupt it with Esc or Ctrl+C, it becomes yours: it stays on the board as an ordinary session, and loses its board tools. Answering a question it asked doesn't count. While a run is on the board, pressing its button again opens it rather than starting another.
+
 ## Your data
 
 Transcripts stay where Claude Code keeps them. The app stores only the board layout (projects, card positions, sections, notes, archive, custom titles and lineage) and its settings (theme) in `~/Library/Application Support/Claude Nodes/state.json`. *Remove from board* hides a card and never deletes a transcript.
@@ -141,6 +153,8 @@ src/
     hostProtocol.ts  messages between the two over a Unix socket
     hooks.ts      the status machine, driven by hooks the session host passes on
     summarize.ts  forked, non-persisted handoff summaries
+    actions.ts    the Actions dock's buttons: drafting them with Claude, and each run's extra claude options
+    boardTools.ts the MCP server that lets an action run list and archive the board's sessions
     store.ts      state.json in the app's userData directory
   renderer/src/
     views/        ProjectsView (folders) and BoardView (canvas)

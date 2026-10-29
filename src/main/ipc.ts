@@ -5,6 +5,7 @@ import fs from 'fs'
 import path from 'path'
 import { IPC } from '@shared/api'
 import type {
+  ActionRunResult,
   AppInfo,
   AppSettings,
   BoardNode,
@@ -16,6 +17,7 @@ import type {
   NodePatch,
   OpenSessionResult,
   Project,
+  ProjectAction,
   ProjectGroup,
   ProjectStats,
   Rect,
@@ -24,8 +26,10 @@ import type {
   SummaryResult,
   Viewport
 } from '@shared/types'
+import { draftAction, normalizeAction, runArgs } from './actions'
 import { hasPendingWork, readAgents } from './agents'
-import { hasTranscript, loadBoard, projectStats, toCard } from './board'
+import { archiveNode, hasTranscript, loadBoard, projectStats, toCard } from './board'
+import { revokeBoardTools, startBoardTools } from './boardTools'
 import {
   AGENT_ID,
   readSession,
@@ -39,7 +43,7 @@ import {
 } from './discovery'
 import { getClaudePath, getClaudeVersion, initEnv } from './env'
 import { gitDiff, gitStatus } from './git'
-import { configureStatus, forgetStatus } from './hooks'
+import { configureStatus, forgetStatus, getStatus } from './hooks'
 import { installMenu } from './menu'
 import { nameSection, type NamingSource } from './naming'
 import * as ptys from './pty'
@@ -51,9 +55,26 @@ import {
   getState,
   loadState,
   normalizeSettings,
+  projectIdForSession,
   save
 } from './store'
 import { summarizeSessions } from './summarize'
+
+/**
+ * Whether terminal input to a run is the user stepping in: an interrupt (Esc,
+ * Ctrl+C), or text and Enter unless the run is waiting on them, when keys
+ * answer its question. Replies the terminal sends by itself (focus changes,
+ * cursor, mouse and colour reports) don't count.
+ */
+function isTakeover(sessionId: string, data: string): boolean {
+  if (data === '\x1b' || data === '\x03') return true
+  if (getStatus(sessionId) === 'waiting') return false
+  const typed = data
+    .replace(/\x1b[P\]^_][\s\S]*?(?:\x07|\x1b\\)/g, '')
+    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
+    .replace(/\x1b[@-_]/g, '')
+  return /[^\x00-\x1f\x7f]|\r/.test(typed)
+}
 
 const FOLDER_COLORS: FolderColor[] = ['blue', 'purple', 'pink', 'red', 'orange', 'yellow', 'green', 'graphite']
 
@@ -97,8 +118,56 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
     onData: (sessionId, data) => send(IPC.evPtyData, sessionId, data),
     onExit: (sessionId, exitCode) => send(IPC.evPtyExit, sessionId, exitCode)
   })
+  /**
+   * An action run whose turn has ended leaves the board: its card, its section,
+   * and its transcript, which is hidden like a removed card's. The renderer is
+   * told what Claude said last, which the prompt asks to be a one-line summary.
+   */
+  const finishRun = (sessionId: string) => {
+    const projectId = projectIdForSession(sessionId)
+    const board = projectId ? getBoard(projectId) : undefined
+    const node = board?.nodes[sessionId]
+    if (!projectId || !board || !node?.runOf) return
+    const project = getProject(projectId)
+    const action = project.actions?.find((a) => a.id === node.runOf)
+    const meta = readSession(sessionId, transcriptPath(project.repoPath, sessionId))?.meta
+
+    delete board.nodes[sessionId]
+    if (!board.hidden!.includes(sessionId)) board.hidden!.push(sessionId)
+    for (const section of Object.values(board.sections!)) {
+      if (section.run === sessionId) delete board.sections![section.id]
+    }
+    save()
+    revokeBoardTools(sessionId)
+    void ptys.kill(sessionId).then(() => forgetStatus(sessionId))
+    const result: ActionRunResult = {
+      projectId,
+      sessionId,
+      actionName: action?.name ?? node.title ?? 'Action',
+      message: meta?.lastAssistantText
+    }
+    send(IPC.evRunFinished, result)
+    send(IPC.evBoardChanged, projectId)
+  }
+
+  /** A run the user typed into or interrupted is theirs: it stays on the board as an ordinary session. */
+  const claimRun = (sessionId: string) => {
+    const projectId = projectIdForSession(sessionId)
+    const board = projectId ? getBoard(projectId) : undefined
+    const node = board?.nodes[sessionId]
+    if (!projectId || !board || !node?.runOf) return
+    delete node.runOf
+    for (const section of Object.values(board.sections!)) if (section.run === sessionId) delete section.run
+    save()
+    revokeBoardTools(sessionId)
+    send(IPC.evBoardChanged, projectId)
+  }
+
   configureStatus({
-    onChange: (sessionId, status, live) => send(IPC.evStatus, sessionId, status, live),
+    onChange: (sessionId, status, live) => {
+      send(IPC.evStatus, sessionId, status, live)
+      if (status === 'done') finishRun(sessionId)
+    },
     onAgentChange: (sessionId, agentId, status) => send(IPC.evAgentStatus, sessionId, agentId, status),
     onUsage: (sessionId, usage) => send(IPC.evUsage, sessionId, usage),
     isLive: ptys.isLive,
@@ -253,6 +322,10 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
 
   ipcMain.handle(IPC.boardLoad, (_e, projectId: string) => {
     const project = getProject(projectId)
+    // A run whose process ended while the app was closed never reported back.
+    for (const node of Object.values(getBoard(projectId).nodes)) {
+      if (node.runOf && !ptys.isLive(node.sessionId)) finishRun(node.sessionId)
+    }
     const snapshot = loadBoard(project)
     watchProject(projectId, project.repoPath, () => send(IPC.evBoardChanged, projectId))
     return snapshot
@@ -303,6 +376,8 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
       color: FOLDER_COLORS.includes(section.color) ? section.color : 'blue',
       x: section.x,
       y: section.y,
+      // Only a run's own session can be the one it holds.
+      run: typeof section.run === 'string' && board.nodes[section.run]?.runOf ? section.run : undefined,
       createdAt: board.sections![section.id]?.createdAt ?? Date.now()
     }
     save()
@@ -391,6 +466,86 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
     return gitDiff(getProject(projectId).repoPath, file)
   })
 
+  // --- Actions -------------------------------------------------------------
+
+  ipcMain.handle(IPC.actionsSave, (_e, projectId: string, raw: ProjectAction): Project => {
+    const project = getProject(projectId)
+    const actions = project.actions ?? []
+    const i = actions.findIndex((a) => a.id === raw?.id)
+    const action = normalizeAction(raw ?? {}, i >= 0 ? actions[i] : undefined)
+    project.actions = i >= 0 ? actions.map((a, j) => (j === i ? action : a)) : [...actions, action]
+    save()
+    return project
+  })
+
+  ipcMain.handle(IPC.actionsRemove, (_e, projectId: string, actionId: string): Project => {
+    const project = getProject(projectId)
+    project.actions = (project.actions ?? []).filter((a) => a.id !== actionId)
+    if (project.actions.length === 0) delete project.actions
+    save()
+    return project
+  })
+
+  ipcMain.handle(IPC.actionsDraft, async (_e, projectId: string, description: string) => {
+    await envReady
+    return draftAction(getProject(projectId).repoPath, description)
+  })
+
+  // What an action run can see and do on its board (boardTools.ts).
+  startBoardTools({
+    listSessions(projectId, self, includeArchived) {
+      const { cards, sections } = loadBoard(getProject(projectId))
+      const sectionNames = new Map(sections.map((s) => [s.id, s.name || 'Untitled section']))
+      return cards
+        .filter((c) => c.sessionId !== self && (includeArchived || !c.archived))
+        .map((c) => ({
+          id: c.sessionId,
+          title: c.title || c.meta?.title || (c.kind === 'terminal' ? 'Terminal' : 'New session'),
+          kind: c.kind ?? 'claude',
+          status: c.archived ? 'archived' : c.status === 'waiting' ? 'waiting for the user' : c.status,
+          running: c.live,
+          section: c.sectionId ? sectionNames.get(c.sectionId) : undefined,
+          actionRun: c.runOf ? true : undefined,
+          branch: c.meta?.gitBranch,
+          lastReply: c.meta?.lastAssistantText,
+          lastActive: new Date(c.meta?.updatedAt ?? c.createdAt).toISOString()
+        }))
+    },
+    archiveSessions(projectId, self, sessionIds, force) {
+      const board = getBoard(projectId)
+      const archived: string[] = []
+      const skipped: { id: string; reason: string }[] = []
+      for (const id of sessionIds) {
+        const node = board.nodes[id]
+        const status = getStatus(id)
+        const reason = !node
+          ? 'not on the board'
+          : id === self
+            ? 'it is the session running this action'
+            : node.kind === 'terminal'
+              ? 'terminals can’t be archived'
+              : node.archived
+                ? 'already archived'
+                : status !== 'done' && !force
+                  ? status === 'waiting'
+                    ? 'it is waiting for the user'
+                    : 'it is working'
+                  : null
+        if (reason) {
+          skipped.push({ id, reason })
+          continue
+        }
+        archiveNode(board, node!)
+        archived.push(id)
+      }
+      if (archived.length) {
+        save()
+        send(IPC.evBoardChanged, projectId)
+      }
+      return { archived, skipped }
+    }
+  }).catch((err) => console.error('[board-tools] failed to start', err))
+
   // --- Sessions ------------------------------------------------------------
 
   ipcMain.handle(
@@ -401,6 +556,8 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
       const board = getBoard(projectId)
       const sessionId = crypto.randomUUID()
       const terminal = opts.kind === 'terminal'
+      const action = terminal ? undefined : project.actions?.find((a) => a.id === opts.actionId)
+      if (opts.actionId && !action) throw new Error('That action no longer exists')
       const node: BoardNode = {
         sessionId,
         kind: terminal ? 'terminal' : undefined,
@@ -411,8 +568,10 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
         parents: !terminal && opts.parents?.length ? opts.parents : undefined,
         createdByApp: true,
         expanded: opts.expanded || undefined,
+        runOf: action?.id,
         createdAt: Date.now()
       }
+      if (action) node.title = action.name
       board.nodes[sessionId] = node
       try {
         await ptys.spawnSession({
@@ -421,11 +580,13 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
           cwd: project.repoPath,
           kind: node.kind,
           resume: false,
-          name: terminal ? undefined : opts.name?.trim() || undefined,
-          initialPrompt: terminal ? undefined : opts.initialPrompt?.trim() || undefined
+          name: terminal ? undefined : node.title,
+          initialPrompt: terminal ? undefined : action?.prompt ?? (opts.initialPrompt?.trim() || undefined),
+          extraArgs: action ? await runArgs(projectId, sessionId, action) : undefined
         })
       } catch (err) {
         delete board.nodes[sessionId]
+        if (action) revokeBoardTools(sessionId)
         throw err
       }
       save()
@@ -458,7 +619,10 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
   )
 
   ipcMain.on(IPC.sessionWrite, (_e, sessionId: string, data: string) => {
-    if (typeof data === 'string') ptys.write(sessionId, data)
+    if (typeof data !== 'string') return
+    // Before the write: an interrupt would otherwise end the run's turn and remove it.
+    if (isTakeover(sessionId, data)) claimRun(sessionId)
+    ptys.write(sessionId, data)
   })
 
   ipcMain.on(IPC.sessionResize, (_e, sessionId: string, cols: number, rows: number) => {

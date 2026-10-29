@@ -74,6 +74,12 @@ const api: Api = {
     diff: (projectId, file) => ipcRenderer.invoke(IPC.gitDiff, projectId, file)
   },
 
+  actions: {
+    save: (projectId, action) => ipcRenderer.invoke(IPC.actionsSave, projectId, action),
+    remove: (projectId, actionId) => ipcRenderer.invoke(IPC.actionsRemove, projectId, actionId),
+    draft: (projectId, description) => ipcRenderer.invoke(IPC.actionsDraft, projectId, description)
+  },
+
   on: {
     ptyData: (cb) => subscribe(IPC.evPtyData, cb),
     ptyExit: (cb) => subscribe(IPC.evPtyExit, cb),
@@ -82,6 +88,7 @@ const api: Api = {
     usage: (cb) => subscribe(IPC.evUsage, cb),
     boardChanged: (cb) => subscribe(IPC.evBoardChanged, cb),
     summarizeProgress: (cb) => subscribe(IPC.evSummarizeProgress, cb),
+    runFinished: (cb) => subscribe(IPC.evRunFinished, cb),
     menu: (cb) => subscribe(IPC.evMenu, cb)
   }
 }

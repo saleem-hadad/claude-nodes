@@ -4,7 +4,7 @@ import type { BoardNode, BoardSnapshot, Project, ProjectStats, Rect, SessionCard
 import { attachAgents } from './agents'
 import { scanRepo, transcriptDir, transcriptPath, type DiscoveredSession } from './discovery'
 import { getStatus, getUsage } from './hooks'
-import { isLive } from './pty'
+import { isLive, kill } from './pty'
 import { getBoard, save, type BoardState } from './store'
 
 export const CARD_W = 288
@@ -43,6 +43,21 @@ function growArchive(board: BoardState) {
     bottom = Math.max(bottom, node.y + CARD_H + PAD_BOTTOM)
   }
   board.archive = { ...a, w: right - a.x, h: bottom - a.y }
+}
+
+/**
+ * Archives a card the way the board does: stops its process, takes it out of
+ * its section and puts it on top of the archive stack. For changes made
+ * outside the renderer, such as an action run's board tools.
+ */
+export function archiveNode(board: BoardState, node: BoardNode) {
+  if (node.archived) return
+  void kill(node.sessionId)
+  Object.assign(node, slotPosition(board.archive, 0, columnsFor(board.archive)))
+  node.archived = true
+  node.archivedAt = Date.now()
+  delete node.sectionId
+  delete node.expanded
 }
 
 /** Places newly discovered sessions in free grid slots inside the archive. */

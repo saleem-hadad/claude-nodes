@@ -2,6 +2,8 @@
 // channel names it maps to. Main-process handlers in src/main/ipc.ts implement
 // exactly these channels.
 import type {
+  ActionDraft,
+  ActionRunResult,
   AgentInfo,
   AppInfo,
   AppSettings,
@@ -16,6 +18,7 @@ import type {
   NodePatch,
   OpenSessionResult,
   Project,
+  ProjectAction,
   ProjectGroup,
   ProjectStats,
   Rect,
@@ -70,6 +73,10 @@ export const IPC = {
   gitStatus: 'git:status',
   gitDiff: 'git:diff',
 
+  actionsSave: 'actions:save',
+  actionsRemove: 'actions:remove',
+  actionsDraft: 'actions:draft',
+
   // main -> renderer events
   evPtyData: 'ev:pty-data',
   evPtyExit: 'ev:pty-exit',
@@ -78,6 +85,7 @@ export const IPC = {
   evUsage: 'ev:usage',
   evBoardChanged: 'ev:board-changed',
   evSummarizeProgress: 'ev:summarize-progress',
+  evRunFinished: 'ev:run-finished',
   evMenu: 'ev:menu'
 } as const
 
@@ -180,6 +188,15 @@ export interface Api {
     diff(projectId: string, file: GitFileChange): Promise<GitFileDiff>
   }
 
+  /** The Actions dock. An action runs through sessions.create with its actionId. */
+  actions: {
+    /** Adds an action to the project, or replaces the one with its id. Resolves with the project. */
+    save(projectId: string, action: ProjectAction): Promise<Project>
+    remove(projectId: string, actionId: string): Promise<Project>
+    /** Asks Claude to turn a description into a name, icon, prompt and tool permissions. */
+    draft(projectId: string, description: string): Promise<ActionDraft>
+  }
+
   on: {
     ptyData(cb: (sessionId: string, data: string) => void): Unsubscribe
     ptyExit(cb: (sessionId: string, exitCode: number) => void): Unsubscribe
@@ -191,6 +208,8 @@ export interface Api {
     /** Transcripts or board state changed on disk; the renderer should reload the board. */
     boardChanged(cb: (projectId: string) => void): Unsubscribe
     summarizeProgress(cb: (progress: SummarizeProgress) => void): Unsubscribe
+    /** An action run finished, and its card and section left the board. */
+    runFinished(cb: (result: ActionRunResult) => void): Unsubscribe
     menu(cb: (command: MenuCommand) => void): Unsubscribe
   }
 }

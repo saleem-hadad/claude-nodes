@@ -52,6 +52,7 @@ import type {
   BoardSnapshot,
   FolderColor,
   NodePatch,
+  ProjectAction,
   Rect,
   SessionCard,
   SessionKind
@@ -149,7 +150,8 @@ import {
   type Size
 } from '@renderer/components/board/layout'
 import { wakeCardTerminal } from '@renderer/components/board/ExpandedCard'
-import { focus as focusTerminal } from '@renderer/terminal/registry'
+import { dispose as disposeTerminal, focus as focusTerminal } from '@renderer/terminal/registry'
+import { ActionsDock } from '@renderer/components/actions/ActionsDock'
 import { fuzzyMatch } from '@renderer/components/board/fuzzy'
 import '@renderer/components/board/board.css'
 
@@ -487,7 +489,9 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
   const [toast, setToast] = useState<string | null>(null)
 
   const closeMenu = useCallback(() => setMenu(null), [])
-  const overlayOpen = Boolean(menu || confirmReq || merge)
+  // The Actions dock's dialog and menus, which the board's shortcuts must not reach behind.
+  const [dockOverlay, setDockOverlay] = useState(false)
+  const overlayOpen = Boolean(menu || confirmReq || merge || dockOverlay)
   const overlayOpenRef = useRef(overlayOpen)
   overlayOpenRef.current = overlayOpen
 
@@ -993,6 +997,52 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
       ensureVisible(spot)
     },
     [patchCards, ensureVisible]
+  )
+
+  // ---- actions ---------------------------------------------------------------
+
+  /** Each action's run on the board, by action id. */
+  const runs = useMemo(
+    () => new Map(cards.filter((c) => c.runOf && !c.archived).map((c) => [c.runOf!, c.sessionId])),
+    [cards]
+  )
+
+  /** Starts a run of `action`: a session on its prompt, in a section named after it. */
+  const runAction = useCallback(
+    async (action: ProjectAction) => {
+      const all = cardsRef.current
+      const frames = groupsRef.current.map((g) => g.frame)
+      const spot = spotForNewSession(dockRef.current, all, CARD_SIZE, [...notesInTheWay(), ...frames])
+      try {
+        const card = await window.api.sessions.create(projectId, {
+          x: Math.round(spot.x),
+          y: Math.round(spot.y),
+          actionId: action.id
+        })
+        upsertCard(card)
+        const others = cardObstacles(all.filter((c) => !c.archived))
+        const { frame, positions } = layoutGroup([card], others, [dockRef.current, ...frames, ...notesInTheWay()])
+        const section = addSection(frame, false)
+        saveSection({ ...section, name: action.name, run: card.sessionId })
+        patchCards([{ sessionId: card.sessionId, sectionId: section.id, ...positions.get(card.sessionId) }])
+        ensureVisible(frame, frame)
+      } catch (err) {
+        showToast(`Couldn't run ${action.name}: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    },
+    [projectId, upsertCard, addSection, saveSection, patchCards, ensureVisible, showToast]
+  )
+
+  // A finished run has already left the board; say what it did.
+  useEffect(
+    () =>
+      window.api.on.runFinished((run) => {
+        if (run.projectId !== projectId) return
+        disposeTerminal(run.sessionId)
+        if (useApp.getState().terminalSessionId === run.sessionId) useApp.getState().closeTerminal()
+        showToast(run.message ? `${run.actionName}: ${truncate(run.message, 180)}` : `${run.actionName} finished`)
+      }),
+    [projectId, showToast]
   )
 
   // ---- notes -----------------------------------------------------------------
@@ -1982,6 +2032,14 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
                       </p>
                     </div>
                   )}
+
+                  <ActionsDock
+                    project={board.project}
+                    runs={runs}
+                    onRun={runAction}
+                    onShowRun={openTerminal}
+                    onOverlayChange={setDockOverlay}
+                  />
 
                   {selectedCards.length > 0 && !merge && (
                     <SelectionBar

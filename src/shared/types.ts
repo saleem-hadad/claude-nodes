@@ -23,6 +23,41 @@ export interface Project {
   archived?: boolean
   /** The group the project is filed under; ungrouped when unset. */
   groupId?: string
+  /** The project's action buttons, in the order the dock lists them. */
+  actions?: ProjectAction[]
+}
+
+/**
+ * A button in the board's Actions dock. Claude drafts it from what the user
+ * describes; each press starts a session on its prompt, in a section of its
+ * own, and both leave the board once the session finishes.
+ */
+export interface ProjectAction {
+  id: string
+  name: string
+  /** One of ACTION_ICONS (src/shared/actions.ts). */
+  icon: string
+  /** What the user asked for, kept so the action can be redrafted. */
+  description: string
+  /** The run's first prompt. */
+  prompt: string
+  /**
+   * Permission rules a run may use without asking, such as "Bash(git push *)".
+   * The board tools are always allowed.
+   */
+  allowedTools: string[]
+  createdAt: number
+}
+
+/** Claude's draft of an action, for the user to review before saving. */
+export type ActionDraft = Pick<ProjectAction, 'name' | 'icon' | 'prompt' | 'allowedTools'>
+
+/** An action run that finished and left the board, with Claude's last word on it. */
+export interface ActionRunResult {
+  projectId: string
+  sessionId: string
+  actionName: string
+  message?: string
 }
 
 /** A named set of projects (e.g. infra repos), shown as its own section on the projects grid. */
@@ -101,6 +136,8 @@ export interface BoardNode {
   /** Size of the expanded card, once it has been resized. */
   w?: number
   h?: number
+  /** The action this session is a run of. It leaves the board when its turn ends. */
+  runOf?: string
   createdAt: number
 }
 
@@ -116,6 +153,8 @@ export interface BoardSection {
   color: FolderColor
   x: number
   y: number
+  /** The action run this section holds (its session id); it goes with the run. */
+  run?: string
   createdAt: number
 }
 
@@ -234,6 +273,8 @@ export interface CreateSessionOptions {
   parents?: string[]
   /** Starts the card expanded on the board. */
   expanded?: boolean
+  /** Runs this project action: its prompt, tools and board access. Claude sessions only. */
+  actionId?: string
 }
 
 export interface SummaryResult {
