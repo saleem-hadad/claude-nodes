@@ -364,9 +364,9 @@ export function VoicePrompt({ projectId, onStart, ref }: Props) {
             aria-label={listening ? 'Stop recording' : 'Speak a prompt'}
           >
             {listening ? (
-              <Square size={13} fill="currentColor" strokeWidth={0} />
+              <Square size={20} fill="currentColor" strokeWidth={0} />
             ) : phase === 'transcribing' ? (
-              <Loader2 size={18} className="spin" />
+              <Loader2 size={27} className="spin" />
             ) : (
               <Mic size={27} strokeWidth={2} />
             )}
