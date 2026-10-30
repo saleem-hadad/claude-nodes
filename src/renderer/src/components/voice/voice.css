@@ -25,8 +25,8 @@
   display: grid;
   flex: none;
   place-items: center;
-  width: 66px;
-  height: 66px;
+  width: 53px;
+  height: 53px;
   border: 0;
   border-radius: 50%;
   background: color-mix(in srgb, var(--bg-elevated) 86%, transparent);
@@ -54,7 +54,7 @@
   color: #fff;
   /* A halo that swells with the voice (--level is set while recording). */
   box-shadow:
-    0 0 0 calc(4.5px + var(--level, 0) * 18px) color-mix(in srgb, var(--status-waiting) 20%, transparent),
+    0 0 0 calc(3.6px + var(--level, 0) * 14.4px) color-mix(in srgb, var(--status-waiting) 20%, transparent),
     var(--shadow-md);
   transition:
     background var(--dur-fast) ease,
