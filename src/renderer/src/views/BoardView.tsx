@@ -1197,16 +1197,17 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
   const voiceRef = useRef<VoiceHandle>(null)
 
   /**
-   * Starts a Claude session on a spoken prompt, in a free spot in view. The
-   * words stick to its card the way a started note's do; if the session can't
-   * start, they stay on the board as a note, so nothing said is lost.
+   * Starts a Claude session on a spoken prompt, in auto mode, in a free spot in
+   * view. The words stick to its card the way a started note's do; if the
+   * session can't start, they stay on the board as a note, so nothing said is lost.
    */
   const startSpokenPrompt = useCallback(
     async (text: string) => {
       const el = wrapperRef.current
       const { x, y, zoom } = rf.getViewport()
-      // It gets on with it on the board, never opening in its window, so it stays a plain card.
-      const size = CARD_SIZE
+      // It gets on with it expanded on the board, never opening in its window.
+      // It doesn't take the keyboard, so V speaks the next one.
+      const size = NEW_CARD_SIZE
       const centre = el
         ? { x: (el.clientWidth / 2 - x) / zoom - size.w / 2, y: (el.clientHeight / 2 - y) / zoom - size.h / 2 }
         : { x: 0, y: 0 }
@@ -1215,7 +1216,12 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
       const joins = sectionAt(pos, groupsRef.current)
       const note: BoardNote = { id: crypto.randomUUID(), text, color: NOTE_COLOR, ...pos, createdAt: Date.now() }
       try {
-        const card = await window.api.sessions.create(projectId, { ...pos, initialPrompt: text })
+        const card = await window.api.sessions.create(projectId, {
+          ...pos,
+          initialPrompt: text,
+          expanded: true,
+          autoMode: true
+        })
         upsertCard(card)
         if (joins) patchCards([{ sessionId: card.sessionId, sectionId: joins }])
         saveNote({ ...note, sessionId: card.sessionId })

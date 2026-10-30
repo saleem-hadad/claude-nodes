@@ -145,6 +145,8 @@ export interface BoardNode {
    * go when their turn ends; one the user takes over joins the board.
    */
   runOf?: string
+  /** Runs in auto mode, as a spoken prompt's session does, and resumes in it too. */
+  autoMode?: boolean
   createdAt: number
 }
 
@@ -285,6 +287,10 @@ export interface CreateSessionOptions {
   parents?: string[]
   /** Runs this project action: its prompt, auto mode and board tools. Claude sessions only. */
   actionId?: string
+  /** The card starts expanded on the board, showing its terminal. */
+  expanded?: boolean
+  /** Runs in auto mode: Claude Code approves routine steps by itself and blocks risky ones. Claude sessions only. */
+  autoMode?: boolean
 }
 
 export interface SummaryResult {

@@ -644,6 +644,8 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
         parents: !terminal && opts.parents?.length ? opts.parents : undefined,
         createdByApp: true,
         runOf: action?.id,
+        expanded: opts.expanded || undefined,
+        autoMode: !terminal && opts.autoMode ? true : undefined,
         createdAt: Date.now()
       }
       if (action) node.title = action.name
@@ -657,7 +659,7 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
           resume: false,
           name: terminal ? undefined : node.title,
           initialPrompt: terminal ? undefined : action?.prompt ?? (opts.initialPrompt?.trim() || undefined),
-          permissionMode: action ? 'auto' : undefined,
+          permissionMode: action || node.autoMode ? 'auto' : undefined,
           extraArgs: action ? runArgs(action) : undefined
         })
       } catch (err) {
@@ -678,14 +680,16 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
       }
       await envReady
       const project = getProject(projectId)
+      const node = getBoard(projectId).nodes[sessionId]
       await ptys.spawnSession({
         sessionId,
         projectId,
         cwd: project.repoPath,
         // A terminal whose shell exited always starts a fresh one.
-        kind: getBoard(projectId).nodes[sessionId]?.kind,
+        kind: node?.kind,
         // A card created in the app but never used has no transcript to resume.
         resume: hasTranscript(project, sessionId),
+        permissionMode: node?.autoMode ? 'auto' : undefined,
         cols,
         rows
       })
