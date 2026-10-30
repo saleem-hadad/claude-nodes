@@ -368,7 +368,7 @@ export function VoicePrompt({ projectId, onStart, ref }: Props) {
             ) : phase === 'transcribing' ? (
               <Loader2 size={18} className="spin" />
             ) : (
-              <Mic size={18} strokeWidth={2} />
+              <Mic size={27} strokeWidth={2} />
             )}
           </button>
         </div>
