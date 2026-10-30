@@ -1,34 +1,84 @@
-// Board tools for action runs: a small MCP server on 127.0.0.1 that lets a
-// run's Claude session see and tidy the board it was started from.
+// Board tools: an MCP server that lets Claude sessions work with the board
+// they run on. Every Claude session can write sticky notes on it, so what it
+// found can go up beside its card; action runs can also list and archive the
+// board's sessions.
 //
-// Claude Code connects over the MCP streamable HTTP transport; every request
-// is answered with plain JSON, so there are no streams to keep open. Each run
-// gets its own token, which ties its calls to one project and keeps its own
-// card out of reach. The token sits in a config file only the user can read,
-// so it never shows up in a process listing.
-import crypto from 'crypto'
-import fs from 'fs'
-import http from 'http'
-import path from 'path'
+// Claude Code reaches the server over the MCP streamable HTTP transport, at
+// the session host (host.ts), which passes each request on to the app. The
+// host outlives the app, as the sessions do, so a session keeps its tools
+// when the app restarts. Every process gets the same config: Claude Code
+// fills in the host's port and token, and the session's id, from the env
+// hookEnv gives it, so the token never shows up in a process listing.
 import { app } from 'electron'
+import { FOLDER_COLORS, type FolderColor } from '@shared/types'
+import { MCP_PATH, MCP_SESSION_HEADER } from './hostProtocol'
+import { projectIdForSession } from './store'
 
 /** The server's name in Claude Code: its tools are mcp__claude-nodes__<tool>. */
 export const BOARD_SERVER = 'claude-nodes'
 const PROTOCOL_VERSION = '2025-06-18'
-const MAX_BODY_BYTES = 1024 * 1024
+
+/** What a note tool may change about a note. */
+export interface NotePatch {
+  text?: string
+  color?: FolderColor
+}
 
 export interface BoardToolHandlers {
+  /** Whether the session is an action run, which gets the session tools too. */
+  isRun(sessionId: string): boolean
   /** The project's sessions, leaving out the calling run. */
   listSessions(projectId: string, self: string, includeArchived: boolean): unknown
   archiveSessions(projectId: string, self: string, sessionIds: string[], force: boolean): unknown
+  listNotes(projectId: string, self: string): unknown
+  createNote(projectId: string, self: string, note: NotePatch): unknown
+  updateNote(projectId: string, noteId: string, patch: NotePatch): unknown
 }
 
-interface Grant {
-  projectId: string
-  sessionId: string
-}
+const INSTRUCTIONS =
+  'Claude Nodes is the board of Claude Code sessions the user runs this session from. Besides the session cards, it holds sticky notes. When the user asks you to put something on the board, or to make notes of it, write it with create_note. Read the notes they have put up with list_notes. Only write notes when the user asks for them.'
 
-const TOOLS = [
+const colorProperty = (description: string) => ({ type: 'string', enum: FOLDER_COLORS, description })
+
+/** Every session's tools. */
+const NOTE_TOOLS = [
+  {
+    name: 'create_note',
+    description:
+      'Puts a sticky note on the user’s Claude Nodes board, beside this session’s card. Use it when the user asks you to put something on the board: findings, a summary, a plan, a list to come back to. A note shows its text as written, so Markdown is not rendered: skip **bold** and # headings, though "- " bullets and blank lines read well. Keep each note to one topic someone can take in at a glance, starting with a short line that says what it is about, and write several notes for several topics. Returns the note’s id.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        text: { type: 'string', description: 'What the note says.' },
+        color: colorProperty('The note’s colour. Defaults to yellow. Colours can tell kinds of notes apart.')
+      },
+      required: ['text']
+    }
+  },
+  {
+    name: 'update_note',
+    description:
+      'Changes the text or colour of a note on the board. Use it to revise a note rather than writing another beside it.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        note_id: { type: 'string', description: 'An id from create_note or list_notes.' },
+        text: { type: 'string', description: 'The note’s new text, in full.' },
+        color: colorProperty('The note’s new colour.')
+      },
+      required: ['note_id']
+    }
+  },
+  {
+    name: 'list_notes',
+    description:
+      'Lists the sticky notes on the board, the user’s and any Claude wrote: each one’s id, text and colour, and whether this session wrote it.',
+    inputSchema: { type: 'object', properties: {} }
+  }
+]
+
+/** An action run's tools, on top of the note tools. */
+const SESSION_TOOLS = [
   {
     name: 'list_sessions',
     description:
@@ -43,7 +93,7 @@ const TOOLS = [
   {
     name: 'archive_sessions',
     description:
-      'Moves sessions into the board’s archive and stops their processes. Their transcripts are kept, so they can be picked up again later. Sessions that are working or waiting for the user are skipped unless force is true. Terminals cannot be archived.',
+      'Moves sessions into the board’s archive and stops their processes. Their transcripts are kept, so they can be picked up again later. A session nothing was said in is removed from the board instead, as there is nothing to keep. Sessions that are working or waiting for the user are skipped unless force is true. Terminals cannot be archived.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -55,97 +105,29 @@ const TOOLS = [
   }
 ]
 
-/** Allow rules that let a run use every board tool without asking. */
-export const BOARD_TOOL_RULES = TOOLS.map((t) => `mcp__${BOARD_SERVER}__${t.name}`)
+const SESSION_TOOL_NAMES = new Set(SESSION_TOOLS.map((t) => t.name))
 
-const grants = new Map<string, Grant>()
-let handlers: BoardToolHandlers | null = null
-let ready: Promise<number> | null = null
+/** Allow rules that let a session use every board tool it has without asking. */
+export const BOARD_TOOL_RULES = [...NOTE_TOOLS, ...SESSION_TOOLS].map((t) => `mcp__${BOARD_SERVER}__${t.name}`)
 
-export function startBoardTools(h: BoardToolHandlers): Promise<number> {
-  handlers = h
-  ready ??= new Promise((resolve, reject) => {
-    const server = http.createServer((req, res) => {
-      serve(req, res).catch((err) => {
-        console.error('[board-tools]', err)
-        if (!res.headersSent) res.writeHead(500)
-        res.end()
-      })
-    })
-    server.on('error', reject)
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address()
-      if (address && typeof address === 'object') resolve(address.port)
-      else reject(new Error('Board tools server has no port'))
-    })
-  })
-  return ready
-}
-
-function configDir() {
-  return path.join(app.getPath('userData'), 'runs')
-}
-
-/**
- * Gives a run access to its project's board, and returns the path of an MCP
- * config file for `claude --mcp-config`.
- */
-export async function grantBoardTools(projectId: string, sessionId: string): Promise<string> {
-  if (!ready) throw new Error('Board tools are not running')
-  const port = await ready
-  const token = crypto.randomBytes(24).toString('hex')
-  grants.set(token, { projectId, sessionId })
-
-  const dir = configDir()
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
-  const file = path.join(dir, `${sessionId}.json`)
-  const config = {
-    mcpServers: {
-      [BOARD_SERVER]: {
-        type: 'http',
-        url: `http://127.0.0.1:${port}/mcp`,
-        headers: { Authorization: `Bearer ${token}` }
+/** The `--mcp-config` for every claude process. Claude Code expands the ${…} from its env (hookEnv). */
+export const BOARD_MCP_CONFIG = JSON.stringify({
+  mcpServers: {
+    [BOARD_SERVER]: {
+      type: 'http',
+      url: `http://127.0.0.1:\${CLAUDE_NODES_PORT}${MCP_PATH}`,
+      headers: {
+        Authorization: 'Bearer ${CLAUDE_NODES_TOKEN}',
+        [MCP_SESSION_HEADER]: '${CLAUDE_NODES_SESSION}'
       }
     }
   }
-  fs.writeFileSync(file, JSON.stringify(config), { mode: 0o600 })
-  return file
-}
+})
 
-export function revokeBoardTools(sessionId: string) {
-  for (const [token, grant] of grants) if (grant.sessionId === sessionId) grants.delete(token)
-  fs.rmSync(path.join(configDir(), `${sessionId}.json`), { force: true })
-}
+let handlers: BoardToolHandlers | null = null
 
-async function serve(req: http.IncomingMessage, res: http.ServerResponse) {
-  if (req.url !== '/mcp') return void res.writeHead(404).end()
-  const token = /^Bearer (\S+)$/.exec(req.headers.authorization ?? '')?.[1]
-  const grant = token ? grants.get(token) : undefined
-  if (!grant) return void res.writeHead(401).end()
-  // No server-to-client stream: every answer comes back on its POST.
-  if (req.method === 'GET') return void res.writeHead(405, { Allow: 'POST' }).end()
-  if (req.method === 'DELETE') return void res.writeHead(204).end()
-  if (req.method !== 'POST') return void res.writeHead(405, { Allow: 'POST' }).end()
-
-  let body = ''
-  for await (const chunk of req) {
-    body += chunk
-    if (body.length > MAX_BODY_BYTES) return void res.writeHead(413).end()
-  }
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(body)
-  } catch {
-    return reply(res, { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } })
-  }
-
-  const messages = Array.isArray(parsed) ? parsed : [parsed]
-  const answers = messages
-    .filter((m): m is RpcRequest => Boolean(m) && typeof m === 'object' && 'id' in m && typeof m.method === 'string')
-    .map((m) => answer(m, grant))
-  // Notifications (no id) get no answer.
-  if (answers.length === 0) return void res.writeHead(202).end()
-  reply(res, Array.isArray(parsed) ? answers : answers[0])
+export function configureBoardTools(h: BoardToolHandlers) {
+  handlers = h
 }
 
 interface RpcRequest {
@@ -154,7 +136,9 @@ interface RpcRequest {
   params?: Record<string, unknown>
 }
 
-function answer(msg: RpcRequest, grant: Grant) {
+/** Answers a JSON-RPC request from a session's process, relayed by the session host. */
+export function answerMcp(sessionId: string, message: unknown) {
+  const msg = message as RpcRequest
   const ok = (result: unknown) => ({ jsonrpc: '2.0', id: msg.id, result })
   switch (msg.method) {
     case 'initialize': {
@@ -162,29 +146,49 @@ function answer(msg: RpcRequest, grant: Grant) {
       return ok({
         protocolVersion: typeof asked === 'string' ? asked : PROTOCOL_VERSION,
         capabilities: { tools: {} },
-        serverInfo: { name: BOARD_SERVER, version: app.getVersion() }
+        serverInfo: { name: BOARD_SERVER, version: app.getVersion() },
+        instructions: INSTRUCTIONS
       })
     }
     case 'ping':
       return ok({})
     case 'tools/list':
-      return ok({ tools: TOOLS })
+      return ok({ tools: handlers?.isRun(sessionId) ? [...NOTE_TOOLS, ...SESSION_TOOLS] : NOTE_TOOLS })
     case 'tools/call':
-      return ok(callTool(msg.params ?? {}, grant))
+      return ok(callTool(msg.params ?? {}, sessionId))
     default:
       return { jsonrpc: '2.0', id: msg.id, error: { code: -32601, message: `Unknown method ${msg.method}` } }
   }
 }
 
-function callTool(params: Record<string, unknown>, { projectId, sessionId }: Grant) {
+const isColor = (value: unknown): value is FolderColor => FOLDER_COLORS.includes(value as FolderColor)
+
+function callTool(params: Record<string, unknown>, sessionId: string) {
   const args = (params.arguments && typeof params.arguments === 'object' ? params.arguments : {}) as Record<
     string,
     unknown
   >
   const text = (value: unknown) => ({ content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] })
+  const patch = (): NotePatch => ({
+    text: typeof args.text === 'string' ? args.text : undefined,
+    color: isColor(args.color) ? args.color : undefined
+  })
   try {
     if (!handlers) throw new Error('The board is not available')
+    const projectId = projectIdForSession(sessionId)
+    if (!projectId) throw new Error('This session is no longer on a Claude Nodes board')
+    // A run the user took over is an ordinary session now.
+    if (SESSION_TOOL_NAMES.has(String(params.name)) && !handlers.isRun(sessionId)) {
+      throw new Error(`${String(params.name)} is only for action runs`)
+    }
     switch (params.name) {
+      case 'create_note':
+        return text(handlers.createNote(projectId, sessionId, patch()))
+      case 'update_note':
+        if (typeof args.note_id !== 'string') throw new Error('note_id is required')
+        return text(handlers.updateNote(projectId, args.note_id, patch()))
+      case 'list_notes':
+        return text(handlers.listNotes(projectId, sessionId))
       case 'list_sessions':
         return text(handlers.listSessions(projectId, sessionId, args.include_archived === true))
       case 'archive_sessions': {
@@ -197,9 +201,4 @@ function callTool(params: Record<string, unknown>, { projectId, sessionId }: Gra
   } catch (err) {
     return { content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }], isError: true }
   }
-}
-
-function reply(res: http.ServerResponse, value: unknown) {
-  res.writeHead(200, { 'Content-Type': 'application/json' })
-  res.end(JSON.stringify(value))
 }

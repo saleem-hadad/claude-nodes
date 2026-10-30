@@ -8,7 +8,8 @@
  */
 export type SessionStatus = 'working' | 'waiting' | 'done'
 
-export type FolderColor = 'blue' | 'purple' | 'pink' | 'red' | 'orange' | 'yellow' | 'green' | 'graphite'
+export const FOLDER_COLORS = ['blue', 'purple', 'pink', 'red', 'orange', 'yellow', 'green', 'graphite'] as const
+export type FolderColor = (typeof FOLDER_COLORS)[number]
 
 export interface Project {
   id: string
@@ -177,6 +178,8 @@ export interface BoardNote {
    * session's card, rather than on the board, until the card leaves.
    */
   sessionId?: string
+  /** The session that wrote the note with its board tools, when Claude wrote it. */
+  from?: string
   createdAt: number
 }
 

@@ -61,13 +61,35 @@ export type ClientMessage =
   | { type: 'kill'; sessionId: string }
   /** Stops every session and the host itself. */
   | { type: 'shutdown' }
+  /** The app's answer to a relayed MCP request. */
+  | { type: 'mcp-reply'; id: number; reply: unknown }
 
 export type HostMessage =
-  | { type: 'welcome'; protocol: number; hookPort: number; hookToken: string; sessions: HostSession[] }
+  | {
+      type: 'welcome'
+      protocol: number
+      hookPort: number
+      hookToken: string
+      sessions: HostSession[]
+      /**
+       * The host relays the board tools' MCP requests to the app. An older
+       * host doesn't, which needs no new protocol: its sessions go without.
+       */
+      mcp?: boolean
+    }
   | { type: 'spawned'; id: number; error?: string }
   | { type: 'data'; sessionId: string; data: string }
   | { type: 'exit'; sessionId: string; exitCode: number }
   | { type: 'hook'; sessionId: string; event: string; payload: Record<string, unknown> }
+  /** A JSON-RPC request a session's claude process sent to the board tools, for the app to answer. */
+  | { type: 'mcp'; id: number; sessionId: string; message: unknown }
+
+/**
+ * Where a claude process reaches the board tools: on the hook server, with the
+ * hook token as its bearer token and its session id in this header.
+ */
+export const MCP_PATH = '/mcp'
+export const MCP_SESSION_HEADER = 'X-Claude-Nodes-Session'
 
 /** Keystrokes the status heuristics act on (noteUserInput in hooks.ts). */
 export const STATUS_KEY = /^(?:\r|\x1b|\x03|[1-9])$/

@@ -1326,6 +1326,35 @@ kbd {
   color: var(--note-ink-faint);
 }
 
+/* A note Claude wrote is signed with its session, along the bottom, clear of the play button. */
+.note.has-from .note-text {
+  height: calc(100% - 22px);
+}
+.note-from {
+  position: absolute;
+  left: 18px;
+  right: 46px;
+  bottom: 13px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  line-height: 16px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--note-ink-faint);
+  cursor: default;
+  transition: color var(--dur-fast) ease;
+}
+.note-from:hover {
+  color: var(--note-ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 /* The pad's top sheet lifts at a corner under the pointer, ready to be peeled off. */
 .note.is-draft {
   cursor: grab;

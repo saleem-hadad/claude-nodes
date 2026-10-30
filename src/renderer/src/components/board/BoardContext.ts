@@ -14,6 +14,8 @@ export interface BoardActions {
   editNote(note: BoardNote, text: string): void
   /** Starts a Claude session on a note's text; the note then sticks to the session's card. */
   startNote(noteId: string): void
+  /** Opens a card's session, as clicking the card does. */
+  openSession(sessionId: string): void
 }
 
 export const BoardActionsContext = createContext<BoardActions | null>(null)

@@ -1,34 +1,24 @@
 // Geometry for sticky notes, and the pad under the archive they're peeled off.
 import type { Node } from '@xyflow/react'
+import { NOTE_H, NOTE_W, PAD_HEADER_H, PAD_W, noteSize } from '@shared/geometry'
 import type { BoardNote, FolderColor, Rect, SessionCard } from '@shared/types'
-import { ARCHIVE_HEADER_H, ARCHIVE_PAD, CARD_H, STACK_W, isInArchive, stackZone, type Point, type Size } from './layout'
+import { isInArchive, type Point, type Size } from './layout'
 import type { NoteFlowNode } from './NoteNode'
 import type { NotePadFlowNode } from './NotePadNode'
 
-/** A note starts square, as tall as a card so the two line up in rows. */
-export const NOTE_W = CARD_H
-export const NOTE_H = CARD_H
+export { NOTE_H, NOTE_W, PAD_HEADER_H, notePadRect, noteSize } from '@shared/geometry'
+
 export const NOTE_SIZE: Size = { w: NOTE_W, h: NOTE_H }
 export const NOTE_MIN = 120
 /** Notes come off the pad in classic yellow. */
 export const NOTE_COLOR: FolderColor = 'yellow'
 
 export const NOTEPAD_ID = '__notepad__'
-/** The pad sits under the archive stack, as wide as it, with a header like the archive's. */
-export const PAD_HEADER_H = ARCHIVE_HEADER_H
-export const PAD_W = STACK_W
-const PAD_GAP = 24
-/** Room under the top sheet for the sheets beneath it to show. */
-const PAD_BOTTOM = ARCHIVE_PAD
 /** Where the top sheet sits on the pad, centred under the archive's top card. */
 export const PAD_SHEET_X = (PAD_W - NOTE_W) / 2
 
 /** Notes sit on top of the cards they're stuck to, and under the open archive panel. */
 const NOTE_Z = 2
-
-export function noteSize(note: Pick<BoardNote, 'w' | 'h'>): Size {
-  return { w: note.w ?? NOTE_W, h: note.h ?? NOTE_H }
-}
 
 /** Obstacle rectangles for the notes on the board (stickers ride on their cards). */
 export function noteObstacles(notes: BoardNote[]): Rect[] {
@@ -51,12 +41,6 @@ export function splitNotes(notes: BoardNote[], cards: SessionCard[]) {
     }
   }
   return { free, stuck }
-}
-
-/** The pad under the archive's stack. It goes by the folded stack, so the open panel floats over it. */
-export function notePadRect(archive: Rect): Rect {
-  const stack = stackZone(archive)
-  return { x: stack.x, y: stack.y + stack.h + PAD_GAP, w: PAD_W, h: PAD_HEADER_H + NOTE_H + PAD_BOTTOM }
 }
 
 /** Where the pad's top sheet sits, ready to be peeled off. */

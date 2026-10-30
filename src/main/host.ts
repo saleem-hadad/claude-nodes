@@ -5,7 +5,8 @@
 // talks to it over a Unix socket (hostProtocol.ts). A relaunched app
 // reconnects and gets back every live session with its recent output and
 // everything that has moved its status. Hooks come here too: a process's hook
-// endpoint is fixed when it starts, so it has to outlive the app as well.
+// endpoint is fixed when it starts, so it has to outlive the app as well. So
+// do the board tools' requests, which the host passes on to the app.
 //
 // The host exits once it has no sessions and no app connected.
 import crypto from 'crypto'
@@ -16,6 +17,8 @@ import type { AddressInfo } from 'net'
 import * as pty from 'node-pty'
 import type { SessionStatus } from '@shared/types'
 import {
+  MCP_PATH,
+  MCP_SESSION_HEADER,
   PROTOCOL,
   STATUS_KEY,
   STATUS_LINE_EVENT,
@@ -184,6 +187,9 @@ function handle(msg: ClientMessage, socket: net.Socket) {
     case 'shutdown':
       shutdown()
       return
+    case 'mcp-reply':
+      relays.get(msg.id)?.settle(msg.reply)
+      return
   }
 }
 
@@ -208,7 +214,7 @@ const server = net.createServer((socket) => {
             statusLine: s.statusLine
           }))
           socket.write(
-            encode({ type: 'welcome', protocol: PROTOCOL, hookPort, hookToken, sessions: sessionList })
+            encode({ type: 'welcome', protocol: PROTOCOL, hookPort, hookToken, sessions: sessionList, mcp: true })
           )
           // An app on another protocol may only ask us to stop.
           if (msg.protocol === PROTOCOL) clients.add(socket)
@@ -224,6 +230,7 @@ const server = net.createServer((socket) => {
   socket.on('error', () => {})
   socket.on('close', () => {
     if (clients.delete(socket)) log('app disconnected')
+    for (const r of relays.values()) if (r.client === socket) r.settle(undefined)
     // A probe from another host never says hello, and must not stop this one.
     if (greeted) exitIfIdle()
   })
@@ -235,6 +242,14 @@ const server = net.createServer((socket) => {
 
 const hookServer = http.createServer((req, res) => {
   const url = new URL(req.url ?? '/', 'http://127.0.0.1')
+  if (url.pathname === MCP_PATH) {
+    serveMcp(req, res).catch((err) => {
+      log('mcp request failed', err)
+      if (!res.headersSent) res.writeHead(500)
+      res.end()
+    })
+    return
+  }
   if (req.method !== 'POST' || url.pathname !== '/hook' || url.searchParams.get('token') !== hookToken) {
     res.writeHead(404).end()
     req.resume()
@@ -259,6 +274,90 @@ const hookServer = http.createServer((req, res) => {
     broadcast({ type: 'hook', sessionId: s.sessionId, event, payload })
   })
 })
+
+// ---------------------------------------------------------------------------
+// Board tools: the MCP server every claude process is given (boardTools.ts).
+// The app answers its requests; they come through here so that, like hooks,
+// they reach whichever app is running, and keep working across its restarts.
+
+const RELAY_TIMEOUT_MS = 20_000
+const MCP_MAX_BYTES = 1024 * 1024
+const APP_CLOSED = 'Claude Nodes isn’t open, so the board can’t be reached right now.'
+
+interface Relay {
+  client: net.Socket
+  settle(reply: unknown): void
+}
+
+const relays = new Map<number, Relay>()
+let nextRelay = 1
+
+interface RpcRequest {
+  id: string | number | null
+  method: string
+}
+
+const isRequest = (m: unknown): m is RpcRequest =>
+  Boolean(m) && typeof m === 'object' && 'id' in m! && typeof (m as RpcRequest).method === 'string'
+
+/** Passes a request on to the app. Resolves undefined when no app answers it. */
+function relay(sessionId: string, message: RpcRequest): Promise<unknown> {
+  // There's only ever one app; the newest connection is the live one.
+  const client = [...clients].pop()
+  if (!client) return Promise.resolve(undefined)
+  const id = nextRelay++
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => settle(undefined), RELAY_TIMEOUT_MS)
+    const settle = (reply: unknown) => {
+      clearTimeout(timer)
+      relays.delete(id)
+      resolve(reply)
+    }
+    relays.set(id, { client, settle })
+    client.write(encode({ type: 'mcp', id, sessionId, message }))
+  })
+}
+
+/** What a request gets when the app isn't there to answer it. A failed tool call tells Claude why. */
+function unanswered(msg: RpcRequest) {
+  return msg.method === 'tools/call'
+    ? { jsonrpc: '2.0', id: msg.id, result: { content: [{ type: 'text', text: APP_CLOSED }], isError: true } }
+    : { jsonrpc: '2.0', id: msg.id, error: { code: -32603, message: APP_CLOSED } }
+}
+
+/** The MCP streamable HTTP transport, answering every request on its POST: there are no streams. */
+async function serveMcp(req: http.IncomingMessage, res: http.ServerResponse) {
+  const token = /^Bearer (\S+)$/.exec(req.headers.authorization ?? '')?.[1]
+  const s = sessions.get(String(req.headers[MCP_SESSION_HEADER.toLowerCase()] ?? ''))
+  if (token !== hookToken || !s || req.method !== 'POST') {
+    req.resume()
+    // There's no stream to open (GET) and no session to end (DELETE).
+    const status = token !== hookToken || !s ? 401 : req.method === 'DELETE' ? 204 : 405
+    return void res.writeHead(status, status === 405 ? { Allow: 'POST' } : {}).end()
+  }
+
+  let body = ''
+  for await (const chunk of req) {
+    body += chunk
+    if (body.length > MCP_MAX_BYTES) return void res.writeHead(413).end()
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(body)
+  } catch {
+    return reply(res, { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } })
+  }
+  const requests = (Array.isArray(parsed) ? parsed : [parsed]).filter(isRequest)
+  // Notifications (no id) get no answer.
+  if (requests.length === 0) return void res.writeHead(202).end()
+  const answers = await Promise.all(requests.map(async (m) => (await relay(s.sessionId, m)) ?? unanswered(m)))
+  reply(res, Array.isArray(parsed) ? answers : answers[0])
+}
+
+function reply(res: http.ServerResponse, value: unknown) {
+  res.writeHead(200, { 'Content-Type': 'application/json' })
+  res.end(JSON.stringify(value))
+}
 
 // ---------------------------------------------------------------------------
 // Startup

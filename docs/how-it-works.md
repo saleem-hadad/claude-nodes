@@ -71,6 +71,14 @@ Notes sit on top of cards. They don't join sections or the archive: a note dropp
 
 Point at a note with writing on it and press ▶ in its corner (or right-click it and choose **Start session**) to start a Claude session with the note's text as its first prompt, and nothing added. The card takes the note's place and gets to work there, without opening its window. The note then rides on the card as a sticker, a reminder of what was asked: point at it to read all of it, and press its × to delete it. That doesn't ask first, since the text lives on as the session's first prompt. An archived card keeps its sticker out of sight until it's restored. A card removed from the board drops its note back onto the board where the card was.
 
+Claude writes notes too. Ask a session to do some research and put what it found on the board, and it writes notes with its board tools (below). They go up beside its card, one under another, sized to fit what they say, and signed with the session's name: click the name to open the session. Claude can also read the notes on the board and rewrite them, but not delete them.
+
+## Board tools
+
+Every Claude session started from the app gets an MCP server named `claude-nodes`, through `--mcp-config`, with tools for its board: `create_note`, `update_note` and `list_notes`. Action runs get `list_sessions` and `archive_sessions` as well. They're allowed with `--allowedTools`, so they never stop to ask.
+
+The server lives in the session host, next to the hook server, and passes each request on to the app. So a session keeps its tools when you quit and reopen the app; while the app is closed, a tool call fails and says why. Every process gets the same config, and Claude Code fills in the host's port and token, and the session's id, from the process's environment, so the token never shows up in a process listing. Sessions started outside the app don't get the tools.
+
 ## Cards
 
 Cards are read from Claude Code's transcripts in `~/.claude/projects/<encoded-repo-path>/`. Titles use your custom title first, then Claude's generated title, then the first prompt. Parsing is incremental and cached, so large histories load quickly.
@@ -90,10 +98,10 @@ Turn on **Use in every project** to make a button global: it shows in every proj
 Pressing a button starts a session on the action's prompt. It isn't drawn on the board. Its button turns orange, and while the rail is out the session fans out beside it with what it's doing, so you can click to open it. While the rail is hidden, a sliver on the right edge shows a run is going, and turns red when one needs you. The run gets:
 
 - `--permission-mode auto`, so it never stops to ask permission: Claude Code approves routine steps itself and blocks risky ones.
-- the board tools, through `--mcp-config`: `list_sessions` and `archive_sessions`. They're served by the app on 127.0.0.1, with a token for each run that covers only its own project. The token sits in a file only you can read (`runs/` in the app's data folder), so it never shows up in a process listing.
+- the session tools, `list_sessions` and `archive_sessions`, on top of the note tools every session has (see [Board tools](#board-tools)).
 - a note asking it to work without stopping to chat, to ask with AskUserQuestion when it needs you, and to end with a one-line summary.
 
-When the run's turn ends, the session goes, its transcript is hidden like a removed card's, and the summary shows as a notice. If you type into a run, or interrupt it with Esc or Ctrl+C, it becomes yours: it joins the board as an ordinary session, and loses its board tools. Answering a question it asked doesn't count. While a run is going, pressing its button opens it rather than starting another.
+When the run's turn ends, the session goes, its transcript is hidden like a removed card's, and the summary shows as a notice. If you type into a run, or interrupt it with Esc or Ctrl+C, it becomes yours: it joins the board as an ordinary session, and loses its session tools. Answering a question it asked doesn't count. While a run is going, pressing its button opens it rather than starting another.
 
 ## Your data
 
@@ -140,6 +148,7 @@ In the terminal, Esc goes to Claude (it interrupts a turn), so it never closes t
 - Running `/clear` inside a card starts a new session id, which shows up as a new archived card.
 - In a repo Claude Code hasn't opened before, the first session shows Claude's folder-trust prompt. "No, exit" is preselected, so move to "Yes" before pressing Enter.
 - If you update the app while sessions are running, and the update changed how the app talks to the session host, the new version asks to stop those sessions before it continues.
+- A session host started by a version without board tools keeps running sessions after an update, but sessions started on it don't get the tools. They do once every session has stopped and a new host starts.
 - Built and tested on macOS only.
 
 ## Project layout
@@ -147,6 +156,7 @@ In the terminal, Esc goes to Claude (it interrupts a turn), so it never closes t
 ```
 src/
   shared/       types.ts + api.ts: the typed IPC contract (window.api)
+                geometry.ts: board sizes and the free-spot search, which the main process uses to place notes
   preload/      contextBridge implementation of the contract
   main/         Electron main process
     env.ts        login-shell environment and claude binary lookup
@@ -154,12 +164,13 @@ src/
     agents.ts     subagent transcripts: what each agent is doing, and its status
     board.ts      merges sessions on disk with the saved board; archive layout
     pty.ts        the app's side of the session host: output buffers replayed into terminals, input, status replay
-    host.ts       the session host, a separate process: node-pty processes and the hook server
+    host.ts       the session host, a separate process: node-pty processes, the hook server and the board tools' endpoint
     hostProtocol.ts  messages between the two over a Unix socket
     hooks.ts      the status machine, driven by hooks the session host passes on
     summarize.ts  forked, non-persisted handoff summaries
     actions.ts    the actions rail's buttons: drafting them with Claude, and each run's extra claude options
-    boardTools.ts the MCP server that lets an action run list and archive the board's sessions
+    boardTools.ts the board tools' MCP server, answering what the session host relays: notes for every session, and listing and archiving sessions for action runs
+    notes.ts      notes sessions write: where they go on the board, and how big they are
     store.ts      state.json in the app's userData directory
   renderer/src/
     views/        ProjectsView (folders) and BoardView (canvas)

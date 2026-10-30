@@ -4,13 +4,15 @@
 // The pseudo-terminals live in the session host (host.ts), a background
 // process that outlives the app, so sessions keep running after it quits.
 // This is the app's side: it keeps each live session's recent output for
-// replaying into terminals, and passes input, resizes and hooks along.
+// replaying into terminals, and passes input, resizes, hooks and the board
+// tools' requests along.
 import { spawn } from 'child_process'
 import fs from 'fs'
 import net from 'net'
 import path from 'path'
 import { app, dialog } from 'electron'
 import type { SessionKind, SessionStatus } from '@shared/types'
+import { BOARD_MCP_CONFIG, BOARD_TOOL_RULES } from './boardTools'
 import { requireClaude, spawnEnv, userShell } from './env'
 import { hookEnv, hookSettings, markProcess, noteUserInput, receiveHook, setHookEndpoint } from './hooks'
 import {
@@ -36,6 +38,8 @@ const WELCOME_MS = 5000
 export interface PtyCallbacks {
   onData(sessionId: string, data: string): void
   onExit(sessionId: string, exitCode: number): void
+  /** Answers a session's request to the board tools. */
+  onMcp(sessionId: string, message: unknown): unknown
 }
 
 interface Running {
@@ -78,8 +82,10 @@ const running = new Map<string, Running>()
 const spawning = new Map<string, Promise<void>>()
 const pendingSpawns = new Map<number, PendingSpawn>()
 const exitWaiters = new Map<string, (() => void)[]>()
-let callbacks: PtyCallbacks = { onData() {}, onExit() {} }
+let callbacks: PtyCallbacks = { onData() {}, onExit() {}, onMcp: () => undefined }
 let host: net.Socket | null = null
+/** Whether the host relays the board tools' requests; one started by an older app doesn't. */
+let hostRelaysMcp = false
 let connecting: Promise<void> | null = null
 let nextRequest = 1
 let quitting = false
@@ -168,12 +174,23 @@ function handle(msg: HostMessage) {
       return exited(msg.sessionId, msg.exitCode)
     case 'hook':
       return receiveHook(msg.event, msg.sessionId, msg.payload)
+    case 'mcp': {
+      let reply: unknown
+      try {
+        reply = callbacks.onMcp(msg.sessionId, msg.message)
+      } catch (err) {
+        console.error('[board-tools]', err)
+      }
+      // No reply tells the host the app couldn't answer.
+      return send({ type: 'mcp-reply', id: msg.id, reply })
+    }
   }
 }
 
 /** Takes on the sessions a host is already running, with what has happened in them. */
 function adopt(welcome: Extract<HostMessage, { type: 'welcome' }>) {
   setHookEndpoint(welcome.hookPort, welcome.hookToken)
+  hostRelaysMcp = welcome.mcp === true
   for (const s of welcome.sessions) {
     track(s.sessionId, s.projectId, s.initial, s.buffer)
     // Replaying them through the status machine brings its status up to date.
@@ -329,6 +346,9 @@ function commandFor(opts: SpawnOptions): { file: string; args: string[]; env: Re
   const args = opts.resume ? ['--resume', opts.sessionId] : ['--session-id', opts.sessionId]
   if (opts.name) args.push('--name', opts.name)
   args.push('--permission-mode', opts.permissionMode ?? 'acceptEdits')
+  // The board tools, allowed outright so they never stop to ask. Both lists
+  // are followed by another option, so neither swallows the prompt at the end.
+  if (hostRelaysMcp) args.push('--mcp-config', BOARD_MCP_CONFIG, '--allowedTools', ...BOARD_TOOL_RULES)
   if (opts.extraArgs) args.push(...opts.extraArgs)
   args.push('--settings', hookSettings())
   if (opts.initialPrompt) args.push(opts.initialPrompt)

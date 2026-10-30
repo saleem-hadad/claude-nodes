@@ -3,13 +3,13 @@
 // Claude drafts each one from what the user describes, in a quick headless
 // call that may look around the repository (read-only) to fit the prompt to
 // it. A run is an ordinary session started on the action's prompt, in auto
-// mode and with the board tools. It isn't drawn on the board, and goes when
-// its turn ends (see finishRun in ipc.ts).
+// mode and with the session tools on top of every session's note tools
+// (boardTools.ts). It isn't drawn on the board, and goes when its turn ends
+// (see finishRun in ipc.ts).
 import { spawn } from 'child_process'
 import crypto from 'crypto'
 import { ACTION_ICONS, DEFAULT_ACTION_ICON, isActionIcon } from '@shared/actions'
 import type { ActionDraft, ProjectAction } from '@shared/types'
-import { BOARD_TOOL_RULES, grantBoardTools } from './boardTools'
 import { requireClaude, spawnEnv } from './env'
 
 const DRAFT_TIMEOUT_MS = 2 * 60 * 1000
@@ -22,6 +22,7 @@ const DRAFT_SYSTEM_PROMPT = `You design action buttons for Claude Nodes, a board
 Besides the usual tools (reading and editing files, running commands), a run has these board tools:
 - list_sessions: the board's sessions, with their status (working, waiting for the user, or done), whether they are archived, their section, Claude's last reply and when they were last active.
 - archive_sessions: archives sessions by id. It skips ones that are working or waiting unless forced.
+- create_note, update_note and list_notes: write sticky notes on the board, change them, and read the notes there. A note is short plain text, which suits a report the user should find on the board.
 
 From the user's description, write:
 - name: 1 to 3 words in Title Case, for the button.
@@ -42,7 +43,7 @@ const DRAFT_SCHEMA = {
 }
 
 const runSystemPrompt = (action: ProjectAction) =>
-  `You are running "${action.name}", an action button the user pressed on the Claude Nodes board for this project. Nobody is watching while you work, so do the job in the prompt without stopping to chat. If you need the user to decide something, ask with AskUserQuestion: that turns the action's button red to call them. When you are done, end with one line saying what you did. The user is shown that line, and this session then goes away. The mcp__claude-nodes__* tools let you list and archive the board's sessions.`
+  `You are running "${action.name}", an action button the user pressed on the Claude Nodes board for this project. Nobody is watching while you work, so do the job in the prompt without stopping to chat. If you need the user to decide something, ask with AskUserQuestion: that turns the action's button red to call them. When you are done, end with one line saying what you did. The user is shown that line, and this session then goes away. The mcp__claude-nodes__* tools let you list and archive the board's sessions, and write sticky notes on the board.`
 
 const clip = (s: unknown, max: number) => (typeof s === 'string' ? s.trim().slice(0, max) : '')
 
@@ -137,20 +138,7 @@ export function draftAction(repoPath: string, description: string, global: boole
   })
 }
 
-/**
- * Extra `claude` arguments for a run: the board tools, allowed outright so
- * auto mode never weighs them, and a note on how a run should behave. Both
- * list options are followed by another option, so neither swallows the
- * prompt that comes last.
- */
-export async function runArgs(projectId: string, sessionId: string, action: ProjectAction): Promise<string[]> {
-  const mcpConfig = await grantBoardTools(projectId, sessionId)
-  return [
-    '--mcp-config',
-    mcpConfig,
-    '--allowedTools',
-    ...BOARD_TOOL_RULES,
-    '--append-system-prompt',
-    runSystemPrompt(action)
-  ]
+/** Extra `claude` arguments for a run: a note on how a run should behave. */
+export function runArgs(action: ProjectAction): string[] {
+  return ['--append-system-prompt', runSystemPrompt(action)]
 }

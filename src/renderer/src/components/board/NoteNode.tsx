@@ -3,7 +3,7 @@ import { NodeResizer, type Node, type NodeProps, type OnResizeEnd } from '@xyflo
 import { Play, X } from 'lucide-react'
 import clsx from 'clsx'
 import type { BoardNote } from '@shared/types'
-import { useApp } from '@renderer/store'
+import { cardTitle, useApp } from '@renderer/store'
 import { FOLDER_HUES } from '../FolderIcon'
 import { RenamingContext, useBoardActions } from './BoardContext'
 import { NOTE_MIN } from './notes'
@@ -23,8 +23,10 @@ const stop = (e: MouseEvent) => e.stopPropagation()
 function NoteNodeComponent({ id, data, selected, dragging }: NodeProps<NoteFlowNode>) {
   const { note, draft } = data
   const editing = useContext(RenamingContext) === id && !draft
-  const { startNote } = useBoardActions()
+  const { startNote, openSession } = useBoardActions()
   const saveNote = useApp((s) => s.saveNote)
+  // The session that wrote it, while its card is on the board.
+  const from = useApp((s) => (note.from ? s.board?.cards.find((c) => c.sessionId === note.from) : undefined))
   const noteRef = useRef(note)
   noteRef.current = note
   // Stable, so React Flow doesn't rebind the resize handles on every render.
@@ -48,7 +50,8 @@ function NoteNodeComponent({ id, data, selected, dragging }: NodeProps<NoteFlowN
           draft && 'is-draft',
           selected && 'is-selected',
           dragging && 'is-dragging',
-          editing && 'is-editing'
+          editing && 'is-editing',
+          from && 'has-from'
         )}
         style={{ '--note-hue': FOLDER_HUES[note.color].frontTop } as CSSProperties}
         title={draft ? 'Drag a note onto the board, or click for one beside the pad' : undefined}
@@ -59,6 +62,19 @@ function NoteNodeComponent({ id, data, selected, dragging }: NodeProps<NoteFlowN
           <p className={clsx('note-text', !note.text && 'is-empty')}>
             {note.text || (draft ? '' : 'Double-click to write')}
           </p>
+        )}
+        {from && !editing && (
+          <button
+            className="note-from nodrag"
+            onClick={(e) => {
+              e.stopPropagation()
+              openSession(from.sessionId)
+            }}
+            onDoubleClick={stop}
+            title={`Written by Claude in “${cardTitle(from)}”. Click to open that session.`}
+          >
+            — {cardTitle(from)}
+          </button>
         )}
         {!draft && !editing && note.text.trim() && (
           <button

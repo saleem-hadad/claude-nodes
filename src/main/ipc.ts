@@ -27,10 +27,11 @@ import type {
   SummaryResult,
   Viewport
 } from '@shared/types'
+import { FOLDER_COLORS } from '@shared/types'
 import { draftAction, normalizeAction, runArgs } from './actions'
 import { hasPendingWork, readAgents } from './agents'
 import { archiveNode, dropNode, hasTranscript, isEmpty, loadBoard, projectStats, toCard, unstickNotes } from './board'
-import { revokeBoardTools, startBoardTools } from './boardTools'
+import { answerMcp, configureBoardTools } from './boardTools'
 import {
   AGENT_ID,
   readSession,
@@ -47,6 +48,7 @@ import { gitDiff, gitStatus } from './git'
 import { configureStatus, forgetStatus, getStatus } from './hooks'
 import { installMenu } from './menu'
 import { nameSection, type NamingSource } from './naming'
+import * as notes from './notes'
 import * as ptys from './pty'
 import {
   flush,
@@ -82,8 +84,6 @@ function findAction(project: Project, actionId: string): ProjectAction | undefin
   return [...(project.actions ?? []), ...(getState().actions ?? [])].find((a) => a.id === actionId)
 }
 
-const FOLDER_COLORS: FolderColor[] = ['blue', 'purple', 'pink', 'red', 'orange', 'yellow', 'green', 'graphite']
-
 /** A random folder colour, favouring the ones fewest projects use so neighbours tend to differ. */
 function pickFolderColor(projects: Project[]): FolderColor {
   const uses = (color: FolderColor) => projects.filter((p) => p.color === color).length
@@ -94,9 +94,6 @@ function pickFolderColor(projects: Project[]): FolderColor {
 
 /** Bounds for an expanded card's size, in board units. */
 const clampSize = (n: number) => Math.round(Math.min(4000, Math.max(200, n)))
-/** Bounds for a sticky note's size, and how much text it keeps. */
-const clampNoteSize = (n: number) => Math.round(Math.min(1200, Math.max(120, n)))
-const NOTE_MAX_CHARS = 20_000
 
 /**
  * Applies settings that live outside the renderer. The theme goes through
@@ -122,7 +119,8 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
 
   ptys.configurePty({
     onData: (sessionId, data) => send(IPC.evPtyData, sessionId, data),
-    onExit: (sessionId, exitCode) => send(IPC.evPtyExit, sessionId, exitCode)
+    onExit: (sessionId, exitCode) => send(IPC.evPtyExit, sessionId, exitCode),
+    onMcp: answerMcp
   })
   /**
    * An action run whose turn has ended is removed, and its transcript hidden
@@ -141,7 +139,6 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
     delete board.nodes[sessionId]
     if (!board.hidden!.includes(sessionId)) board.hidden!.push(sessionId)
     save()
-    revokeBoardTools(sessionId)
     void ptys.kill(sessionId).then(() => forgetStatus(sessionId))
     const result: ActionRunResult = {
       projectId,
@@ -161,7 +158,6 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
     if (!projectId || !board || !node?.runOf) return
     delete node.runOf
     save()
-    revokeBoardTools(sessionId)
     send(IPC.evBoardChanged, projectId)
   }
 
@@ -427,14 +423,16 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
     const board = getBoard(projectId)
     board.notes![note.id] = {
       id: note.id,
-      text: typeof note.text === 'string' ? note.text.slice(0, NOTE_MAX_CHARS) : '',
+      text: typeof note.text === 'string' ? note.text.slice(0, notes.NOTE_MAX_CHARS) : '',
       color: FOLDER_COLORS.includes(note.color) ? note.color : 'yellow',
       x: Math.round(note.x),
       y: Math.round(note.y),
-      w: Number.isFinite(note.w) ? clampNoteSize(note.w!) : undefined,
-      h: Number.isFinite(note.h) ? clampNoteSize(note.h!) : undefined,
+      w: Number.isFinite(note.w) ? notes.clampNoteSize(note.w!) : undefined,
+      h: Number.isFinite(note.h) ? notes.clampNoteSize(note.h!) : undefined,
       // Only a card on this board can wear it.
       sessionId: typeof note.sessionId === 'string' && board.nodes[note.sessionId] ? note.sessionId : undefined,
+      // Only the board tools say which session wrote a note.
+      from: board.notes![note.id]?.from,
       createdAt: board.notes![note.id]?.createdAt ?? Date.now()
     }
     save()
@@ -523,8 +521,12 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
     return draftAction(getProject(projectId).repoPath, description, global === true)
   })
 
-  // What an action run can see and do on its board (boardTools.ts).
-  startBoardTools({
+  // What a session can see and do on its board (boardTools.ts).
+  configureBoardTools({
+    isRun: (sessionId) => {
+      const projectId = projectIdForSession(sessionId)
+      return Boolean(projectId && getBoard(projectId).nodes[sessionId]?.runOf)
+    },
     listSessions(projectId, self, includeArchived) {
       const { cards, sections } = loadBoard(getProject(projectId))
       const sectionNames = new Map(sections.map((s) => [s.id, s.name || 'Untitled section']))
@@ -583,8 +585,19 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
         send(IPC.evBoardChanged, projectId)
       }
       return { archived, removed, skipped }
+    },
+    listNotes: notes.listNotes,
+    createNote(projectId, self, note) {
+      const { id } = notes.createNote(projectId, self, note)
+      send(IPC.evBoardChanged, projectId)
+      return { noteId: id }
+    },
+    updateNote(projectId, noteId, patch) {
+      notes.updateNote(projectId, noteId, patch)
+      send(IPC.evBoardChanged, projectId)
+      return { noteId }
     }
-  }).catch((err) => console.error('[board-tools] failed to start', err))
+  })
 
   // --- Sessions ------------------------------------------------------------
 
@@ -622,11 +635,10 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
           name: terminal ? undefined : node.title,
           initialPrompt: terminal ? undefined : action?.prompt ?? (opts.initialPrompt?.trim() || undefined),
           permissionMode: action ? 'auto' : undefined,
-          extraArgs: action ? await runArgs(projectId, sessionId, action) : undefined
+          extraArgs: action ? runArgs(action) : undefined
         })
       } catch (err) {
         delete board.nodes[sessionId]
-        if (action) revokeBoardTools(sessionId)
         throw err
       }
       save()

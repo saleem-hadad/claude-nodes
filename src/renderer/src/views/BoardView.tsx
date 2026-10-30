@@ -1259,9 +1259,10 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
         if (useApp.getState().board?.project.id === projectId) saveNote(next)
         else window.api.board.saveNote(projectId, next)
       },
-      startNote: (noteId) => void startNote(noteId)
+      startNote: (noteId) => void startNote(noteId),
+      openSession: openCard
     }),
-    [patchCards, saveSection, expandCards, saveNote, projectId, startNote]
+    [patchCards, saveSection, expandCards, saveNote, projectId, startNote, openCard]
   )
 
   // ---- React Flow handlers -------------------------------------------------
