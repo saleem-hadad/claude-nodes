@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { isEmptySession } from '@shared/sessions'
 import type {
   ActionLists,
   AgentInfo,
@@ -147,10 +148,17 @@ export const useApp = create<AppState>((set, get) => ({
     const board = get().board
     if (!board || patches.length === 0) return
     const byId = new Map(patches.map((p) => [p.sessionId, p]))
+    // A session nothing was said in isn't worth archiving: it leaves the board
+    // instead. The main process makes the same call when it saves the patch.
+    const dropped = board.cards.filter(
+      (c) => byId.get(c.sessionId)?.archived && !c.archived && !isTerminal(c) && isEmptySession(c.meta)
+    )
+    const gone = new Set(dropped.map((c) => c.sessionId))
     set({
       board: {
         ...board,
-        cards: board.cards.map((c) => {
+        notes: unstickNotes(board.notes, dropped),
+        cards: board.cards.filter((c) => !gone.has(c.sessionId)).map((c) => {
           const p = byId.get(c.sessionId)
           if (!p) return c
           const { sectionId, ...rest } = p
@@ -166,8 +174,10 @@ export const useApp = create<AppState>((set, get) => ({
           }
           return next
         })
-      }
+      },
+      selection: get().selection.filter((id) => !gone.has(id))
     })
+    for (const id of gone) disposeTerminal(id)
     window.api.board.saveNodes(board.project.id, patches)
   },
 
@@ -193,12 +203,7 @@ export const useApp = create<AppState>((set, get) => ({
       board: {
         ...board,
         cards: board.cards.filter((c) => c.sessionId !== sessionId),
-        // Its sticker falls off onto the board (the main process does the same).
-        notes: board.notes.map((n) =>
-          n.sessionId !== sessionId
-            ? n
-            : { ...n, sessionId: undefined, ...(card && !card.archived ? { x: card.x, y: card.y } : {}) }
-        )
+        notes: card ? unstickNotes(board.notes, [card]) : board.notes
       },
       selection: get().selection.filter((id) => id !== sessionId)
     })
@@ -357,6 +362,21 @@ export function useCard(sessionId: string | null): SessionCard | undefined {
   return useApp((s) =>
     sessionId ? s.board?.cards.find((c) => c.sessionId === sessionId) : undefined
   )
+}
+
+/**
+ * Stickers on cards leaving the board fall off: onto the board where an active
+ * card was, or back where the note was from an archived one (the main process
+ * does the same).
+ */
+function unstickNotes(notes: BoardNote[], leaving: SessionCard[]): BoardNote[] {
+  if (leaving.length === 0) return notes
+  const byId = new Map(leaving.map((c) => [c.sessionId, c]))
+  return notes.map((n) => {
+    const card = n.sessionId ? byId.get(n.sessionId) : undefined
+    if (!card) return n
+    return { ...n, sessionId: undefined, ...(card.archived ? {} : { x: card.x, y: card.y }) }
+  })
 }
 
 export function isTerminal(card: SessionCard | undefined): boolean {

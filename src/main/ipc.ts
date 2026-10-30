@@ -29,7 +29,7 @@ import type {
 } from '@shared/types'
 import { draftAction, normalizeAction, runArgs } from './actions'
 import { hasPendingWork, readAgents } from './agents'
-import { archiveNode, hasTranscript, loadBoard, projectStats, toCard, unstickNotes } from './board'
+import { archiveNode, dropNode, hasTranscript, isEmpty, loadBoard, projectStats, toCard, unstickNotes } from './board'
 import { revokeBoardTools, startBoardTools } from './boardTools'
 import {
   AGENT_ID,
@@ -334,10 +334,19 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
   })
 
   ipcMain.handle(IPC.boardSaveNodes, (_e, projectId: string, patches: NodePatch[]) => {
+    const project = getProject(projectId)
     const board = getBoard(projectId)
+    let dropped = false
     for (const patch of patches) {
       const node = board.nodes[patch.sessionId]
       if (!node) continue
+      // A session nothing was said in is removed rather than archived; its
+      // note falls off where the card was before it moved.
+      if (patch.archived === true && !node.archived && isEmpty(project, node)) {
+        dropNode(board, node)
+        dropped = true
+        continue
+      }
       if (typeof patch.x === 'number' && Number.isFinite(patch.x)) node.x = patch.x
       if (typeof patch.y === 'number' && Number.isFinite(patch.y)) node.y = patch.y
       if (typeof patch.title === 'string') node.title = patch.title.trim() || undefined
@@ -367,6 +376,9 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
       }
     }
     save()
+    // The renderer drops empty cards itself, by what it last read of their
+    // transcripts; one it archived instead goes when it reloads.
+    if (dropped) send(IPC.evBoardChanged, projectId)
   })
 
   ipcMain.handle(IPC.boardSaveSection, (_e, projectId: string, section: BoardSection) => {
@@ -532,8 +544,10 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
         }))
     },
     archiveSessions(projectId, self, sessionIds, force) {
+      const project = getProject(projectId)
       const board = getBoard(projectId)
       const archived: string[] = []
+      const removed: string[] = []
       const skipped: { id: string; reason: string }[] = []
       for (const id of sessionIds) {
         const node = board.nodes[id]
@@ -555,14 +569,20 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
           skipped.push({ id, reason })
           continue
         }
+        // Nothing was said in it, so there is nothing to keep.
+        if (isEmpty(project, node!)) {
+          dropNode(board, node!)
+          removed.push(id)
+          continue
+        }
         archiveNode(board, node!)
         archived.push(id)
       }
-      if (archived.length) {
+      if (archived.length || removed.length) {
         save()
         send(IPC.evBoardChanged, projectId)
       }
-      return { archived, skipped }
+      return { archived, removed, skipped }
     }
   }).catch((err) => console.error('[board-tools] failed to start', err))
 

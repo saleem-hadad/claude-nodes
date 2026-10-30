@@ -1,9 +1,10 @@
 // Merges sessions found on disk with the stored board and lays out new ones.
 import fs from 'fs'
+import { isEmptySession } from '@shared/sessions'
 import type { BoardNode, BoardSnapshot, Project, ProjectStats, Rect, SessionCard } from '@shared/types'
 import { attachAgents } from './agents'
-import { scanRepo, transcriptDir, transcriptPath, type DiscoveredSession } from './discovery'
-import { getStatus, getUsage } from './hooks'
+import { readSession, scanRepo, transcriptDir, transcriptPath, type DiscoveredSession } from './discovery'
+import { forgetStatus, getStatus, getUsage } from './hooks'
 import { isLive, kill } from './pty'
 import { getBoard, save, type BoardState } from './store'
 
@@ -58,6 +59,22 @@ export function archiveNode(board: BoardState, node: BoardNode) {
   node.archivedAt = Date.now()
   delete node.sectionId
   delete node.expanded
+}
+
+/**
+ * A Claude session nothing was said in, which isn't worth archiving: archiving
+ * it removes it instead.
+ */
+export function isEmpty(project: Project, node: BoardNode) {
+  if (node.kind === 'terminal') return false
+  return isEmptySession(readSession(node.sessionId, transcriptPath(project.repoPath, node.sessionId))?.meta)
+}
+
+/** Takes a card off the board: a note stuck to it falls off, and its process stops. */
+export function dropNode(board: BoardState, node: BoardNode) {
+  unstickNotes(board, node)
+  delete board.nodes[node.sessionId]
+  void kill(node.sessionId).then(() => forgetStatus(node.sessionId))
 }
 
 /** Places newly discovered sessions in free grid slots inside the archive. */
