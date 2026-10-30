@@ -5,6 +5,7 @@
   "description": "A spatial board for managing Claude Code sessions per project",
   "main": "./out/main/index.js",
   "author": "Saleem Hadad",
+  "license": "MIT",
   "private": true,
   "scripts": {
     "dev": "electron-vite dev",

@@ -9,6 +9,10 @@
 See every session in a repo at once, spot the ones waiting on you,<br>
 and start new sessions from the context of old ones.
 
+**[Download for Mac](https://github.com/saleem-hadad/claude-nodes/releases/latest/download/Claude-Nodes-arm64.dmg)** · [Intel](https://github.com/saleem-hadad/claude-nodes/releases/latest/download/Claude-Nodes-x64.dmg) · Free and open source
+
+<sub>If it saves you time, a star helps other people find it.</sub>
+
 </div>
 
 https://github.com/user-attachments/assets/21921a47-2635-4bc4-83f8-166f83134bde

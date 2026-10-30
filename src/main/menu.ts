@@ -1,6 +1,26 @@
-import { app, Menu, type MenuItemConstructorOptions } from 'electron'
+import { app, Menu, shell, type MenuItemConstructorOptions } from 'electron'
 import type { MenuCommand } from '@shared/api'
 import { stopAll } from './pty'
+
+const REPO_URL = 'https://github.com/saleem-hadad/claude-nodes'
+
+/** A new GitHub issue with the app and macOS versions filled in. */
+function bugReportUrl(): string {
+  const body = [
+    '**What happened?**',
+    '',
+    '',
+    '**What did you expect to happen?**',
+    '',
+    '',
+    '**Steps to reproduce**',
+    '',
+    '',
+    '---',
+    `Claude Nodes ${app.getVersion()} · macOS ${process.getSystemVersion()} · ${process.arch}`
+  ].join('\n')
+  return `${REPO_URL}/issues/new?${new URLSearchParams({ body })}`
+}
 
 /**
  * Application menu. File-menu shortcuts are forwarded to the renderer as menu
@@ -71,6 +91,13 @@ export function installMenu(send: (command: MenuCommand) => void) {
     },
     {
       role: 'windowMenu'
+    },
+    {
+      role: 'help',
+      submenu: [
+        { label: 'Star on GitHub', click: () => void shell.openExternal(REPO_URL) },
+        { label: 'Report a Bug…', click: () => void shell.openExternal(bugReportUrl()) }
+      ]
     }
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
