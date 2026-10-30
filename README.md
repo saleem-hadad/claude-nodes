@@ -72,6 +72,7 @@ https://github.com/user-attachments/assets/21921a47-2635-4bc4-83f8-166f83134bde
 - **Action buttons.** Describe a button ("pull and push, resolving conflicts", "archive the sessions that are done") and Claude writes it. Buttons sit in a rail on the right edge. A press runs Claude in the background, with its session fanned out beside the button until it's done.
 - **A searchable archive.** Old sessions stack up in one pile. Drag a card out to pick it up again.
 - **Sticky notes.** Peel a note off the pad under the archive and stick it anywhere on the board, for reminders and scratch notes. Or ask Claude to do some research and put what it found on the board: its notes go up beside its card.
+- **Speak a prompt.** Press the mic button (or **V**), say what you want, check the text, and press Enter to start a session on it. Uses xAI's speech to text with your own API key.
 
 ## Get started
 
@@ -90,6 +91,7 @@ To build from source, see [Development](docs/how-it-works.md#development).
 | Action | Shortcut |
 | --- | --- |
 | New session · new terminal | N · T |
+| Speak a prompt · stop | V · the mic button |
 | Open a card | Click · Enter |
 | Expand a card on the board · collapse it | E |
 | Select cards | Drag on empty canvas · ⇧-click |

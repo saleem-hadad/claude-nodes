@@ -79,6 +79,18 @@ Every Claude session started from the app gets an MCP server named `claude-nodes
 
 The server lives in the session host, next to the hook server, and passes each request on to the app. So a session keeps its tools when you quit and reopen the app; while the app is closed, a tool call fails and says why. Every process gets the same config, and Claude Code fills in the host's port and token, and the session's id, from the process's environment, so the token never shows up in a process listing. Sessions started outside the app don't get the tools.
 
+## Voice prompts
+
+The mic button sits above the minimap, in the board's bottom-right corner. Click it (or press **V**) and talk: it turns red and swells with your voice, beside a clock and a level meter. Click it again (or press **V**) to stop, or press Esc to throw the recording away. A click shorter than about half a second is ignored, and a recording stops by itself after five minutes.
+
+The recording goes to xAI's speech to text (`grok-voice-transcribe-2.0`), and what you said opens in a box for review. Edit it if you like, then press Enter (or **Start session**) to start a Claude session on it. Shift+Enter starts a new line, and Esc or **Discard** throws it away. **Keep talking** records more and adds it to the end. The session starts like one from a note: its card lands in a free spot in view and gets to work there, with your words on it as a sticker. If the session can't start, they're left on the board as a note.
+
+Each recording goes with up to 100 hint words, so code names come back spelled as in the repo: the project's name, its branch and the names of the files it has changed. If xAI can't transcribe a recording, it's kept, and **Retry** sends it again.
+
+The xAI API key comes from Settings or from `XAI_API_KEY` in your shell, and a saved one wins. Settings encrypts it with the macOS Keychain before it goes into `state.json`, and it never leaves the main process: the window only learns where the key comes from. With no key, the mic button opens Settings. The first recording asks macOS for the microphone. If you turned it down, the notice links to Privacy & Security › Microphone.
+
+Audio leaves your machine only when you stop a recording, and goes to xAI alone. It counts toward your xAI usage.
+
 ## Cards
 
 Cards are read from Claude Code's transcripts in `~/.claude/projects/<encoded-repo-path>/`. Titles use your custom title first, then Claude's generated title, then the first prompt. Parsing is incremental and cached, so large histories load quickly.
@@ -105,7 +117,7 @@ When the run's turn ends, the session goes, its transcript is hidden like a remo
 
 ## Your data
 
-Transcripts stay where Claude Code keeps them. The app stores only the board layout (projects, card positions, sections, notes, archive, custom titles and lineage) and its settings (theme) in `~/Library/Application Support/Claude Nodes/state.json`. *Remove from board* hides a card and never deletes a transcript.
+Transcripts stay where Claude Code keeps them. The app stores only the board layout (projects, card positions, sections, notes, archive, custom titles and lineage) and its settings (theme, and the xAI key for voice prompts if you save one, encrypted with the macOS Keychain) in `~/Library/Application Support/Claude Nodes/state.json`. *Remove from board* hides a card and never deletes a transcript.
 
 The session host keeps its socket and log in the `host` folder next to it. Only your user can open the folder, which matters because anything that can connect to the socket can start processes as you.
 
@@ -133,6 +145,8 @@ The session host keeps its socket and log in the `host` folder next to it. Only 
 | | New note | Drag one off the pad under the archive · click the pad · right-click › New note here |
 | | Write in a note | Double-click it · Enter |
 | | Start a session from a note | Its ▶ button · right-click › Start session |
+| | Speak a prompt · stop | V · the mic button above the minimap |
+| | Start a session on what you said · discard it | Enter · Esc |
 | | Delete the selected notes | ⌫ |
 | | Fan out a card's agents | Point at the deck under it · click to pin |
 | | Pan · zoom | Two-finger scroll, Space-drag or middle-drag · pinch |
@@ -171,10 +185,11 @@ src/
     actions.ts    the actions rail's buttons: drafting them with Claude, and each run's extra claude options
     boardTools.ts the board tools' MCP server, answering what the session host relays: notes for every session, and listing and archiving sessions for action runs
     notes.ts      notes sessions write: where they go on the board, and how big they are
+    voice.ts      speech to text for the mic button through xAI, and the key it uses
     store.ts      state.json in the app's userData directory
   renderer/src/
     views/        ProjectsView (folders) and BoardView (canvas)
-    components/   title bar, folder icon, board cards, agent decks, sections, archive stack, notes and their pad, merge dialog, lineage edges
+    components/   title bar, folder icon, board cards, agent decks, sections, archive stack, notes and their pad, merge dialog, lineage edges, the mic button
     terminal/     xterm.js registry, TerminalModal, TranscriptPreview, AgentViewer
 ```
 

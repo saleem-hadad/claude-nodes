@@ -82,6 +82,15 @@ const api: Api = {
       ipcRenderer.invoke(IPC.actionsDraft, projectId, description, global)
   },
 
+  voice: {
+    keySource: () => ipcRenderer.invoke(IPC.voiceKeySource),
+    setKey: (key) => ipcRenderer.invoke(IPC.voiceSetKey, key),
+    microphone: () => ipcRenderer.invoke(IPC.voiceMicrophone),
+    openMicrophoneSettings: () => ipcRenderer.invoke(IPC.voiceMicrophoneSettings),
+    transcribe: (projectId, audio, mimeType) =>
+      ipcRenderer.invoke(IPC.voiceTranscribe, projectId, audio, mimeType)
+  },
+
   on: {
     ptyData: (cb) => subscribe(IPC.evPtyData, cb),
     ptyExit: (cb) => subscribe(IPC.evPtyExit, cb),

@@ -45,6 +45,62 @@
   font-size: var(--text-sm);
 }
 
+.settings-group + .settings-group {
+  margin-top: 26px;
+}
+.settings-hint + .settings-hint {
+  margin-top: 4px;
+}
+
+.settings-error {
+  margin: 8px 0 0;
+  color: var(--status-waiting);
+  font-size: var(--text-sm);
+}
+
+/* An inline text button, like a link. */
+.settings-link,
+.settings-hint a {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: none;
+  cursor: default;
+}
+.settings-link:hover,
+.settings-hint a:hover {
+  text-decoration: underline;
+}
+
+/* xAI key for voice prompts */
+.settings-key {
+  display: flex;
+  gap: 8px;
+}
+
+.settings-input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 10px;
+  border: 0.5px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-md);
+}
+.settings-input::placeholder {
+  color: var(--text-tertiary);
+}
+.settings-input:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 0;
+  border-color: transparent;
+}
+
 /* Theme tiles */
 .settings-themes {
   display: flex;

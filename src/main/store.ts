@@ -44,6 +44,8 @@ export interface State {
   settings: AppSettings
   /** Global actions, in every project's actions rail. A project's own are on the project. */
   actions?: ProjectAction[]
+  /** The xAI API key for voice prompts, encrypted with safeStorage (base64). Never sent to the renderer. */
+  voiceKey?: string
 }
 
 let state: State = { projects: [], groups: [], boards: {}, settings: normalizeSettings(null) }
@@ -61,7 +63,8 @@ export function loadState() {
       groups: Array.isArray(raw.groups) ? raw.groups : [],
       boards: raw.boards && typeof raw.boards === 'object' ? raw.boards : {},
       settings: normalizeSettings(raw.settings),
-      actions: Array.isArray(raw.actions) ? raw.actions : undefined
+      actions: Array.isArray(raw.actions) ? raw.actions : undefined,
+      voiceKey: typeof raw.voiceKey === 'string' && raw.voiceKey ? raw.voiceKey : undefined
     }
   } catch {
     state = { projects: [], groups: [], boards: {}, settings: normalizeSettings(null) }

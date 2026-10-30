@@ -62,6 +62,7 @@ import {
   save
 } from './store'
 import { summarizeSessions } from './summarize'
+import * as voice from './voice'
 
 /**
  * Whether terminal input to a run is the user stepping in: an interrupt (Esc,
@@ -519,6 +520,28 @@ export async function registerIpc(getWindow: () => BrowserWindow | null) {
   ipcMain.handle(IPC.actionsDraft, async (_e, projectId: string, description: string, global: boolean) => {
     await envReady
     return draftAction(getProject(projectId).repoPath, description, global === true)
+  })
+
+  // --- Voice -----------------------------------------------------------------
+
+  // The shell's XAI_API_KEY is only known once the login-shell env is in.
+  ipcMain.handle(IPC.voiceKeySource, async () => {
+    await envReady
+    return voice.keySource()
+  })
+
+  ipcMain.handle(IPC.voiceSetKey, async (_e, key: string | null) => {
+    await envReady
+    return voice.setKey(typeof key === 'string' ? key : null)
+  })
+
+  ipcMain.handle(IPC.voiceMicrophone, () => voice.microphone())
+
+  ipcMain.handle(IPC.voiceMicrophoneSettings, () => voice.openMicrophoneSettings())
+
+  ipcMain.handle(IPC.voiceTranscribe, async (_e, projectId: string, audio: Uint8Array, mimeType: string) => {
+    await envReady
+    return voice.transcribe(getProject(projectId), audio, String(mimeType ?? ''))
   })
 
   // What a session can see and do on its board (boardTools.ts).

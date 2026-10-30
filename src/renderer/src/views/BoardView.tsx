@@ -154,6 +154,7 @@ import {
 import { wakeCardTerminal } from '@renderer/components/board/ExpandedCard'
 import { dispose as disposeTerminal, focus as focusTerminal } from '@renderer/terminal/registry'
 import { ActionRail } from '@renderer/components/actions/ActionRail'
+import { VoicePrompt, type VoiceHandle } from '@renderer/components/voice/VoicePrompt'
 import { fuzzyMatch } from '@renderer/components/board/fuzzy'
 import '@renderer/components/board/board.css'
 
@@ -1191,6 +1192,43 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
     [projectId, upsertCard, patchCards, saveNote, ensureVisible, showToast]
   )
 
+  // ---- voice -----------------------------------------------------------------
+
+  const voiceRef = useRef<VoiceHandle>(null)
+
+  /**
+   * Starts a Claude session on a spoken prompt, in a free spot in view. The
+   * words stick to its card the way a started note's do; if the session can't
+   * start, they stay on the board as a note, so nothing said is lost.
+   */
+  const startSpokenPrompt = useCallback(
+    async (text: string) => {
+      const el = wrapperRef.current
+      const { x, y, zoom } = rf.getViewport()
+      // It gets on with it on the board, never opening in its window, so it stays a plain card.
+      const size = CARD_SIZE
+      const centre = el
+        ? { x: (el.clientWidth / 2 - x) / zoom - size.w / 2, y: (el.clientHeight / 2 - y) / zoom - size.h / 2 }
+        : { x: 0, y: 0 }
+      const spot = findFreeSpot(centre, [...cardObstacles(cardsRef.current), ...notesInTheWay()], dockRef.current, size)
+      const pos = { x: Math.round(spot.x), y: Math.round(spot.y) }
+      const joins = sectionAt(pos, groupsRef.current)
+      const note: BoardNote = { id: crypto.randomUUID(), text, color: NOTE_COLOR, ...pos, createdAt: Date.now() }
+      try {
+        const card = await window.api.sessions.create(projectId, { ...pos, initialPrompt: text })
+        upsertCard(card)
+        if (joins) patchCards([{ sessionId: card.sessionId, sectionId: joins }])
+        saveNote({ ...note, sessionId: card.sessionId })
+        ensureVisible(pos, size)
+      } catch (err) {
+        saveNote(note)
+        ensureVisible(pos, NOTE_SIZE)
+        showToast(`Couldn't start a session, so your prompt is on a note: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    },
+    [projectId, rf, upsertCard, patchCards, saveNote, ensureVisible, showToast]
+  )
+
   const selectCards = useCallback((ids: Set<string>) => {
     setNodes((nds) => nds.map((n) => (n.type === 'session' ? { ...n, selected: ids.has(n.id) } : n)))
   }, [])
@@ -1968,6 +2006,9 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
       } else if (e.key.toLowerCase() === 't' && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault()
         fns.createTerminal()
+      } else if (e.key.toLowerCase() === 'v' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.repeat) {
+        e.preventDefault()
+        voiceRef.current?.toggle()
       } else if (e.key.toLowerCase() === 'e' && !e.metaKey && !e.ctrlKey && !e.altKey) {
         // Expands the selected cards, or collapses them when they all are already.
         const active = cardsRef.current.filter((c) => sel.includes(c.sessionId) && !c.archived)
@@ -2109,13 +2150,15 @@ function BoardCanvas({ projectId, board }: { projectId: string; board: BoardSnap
                     <div className="board-hint" aria-hidden>
                       <p className="board-hint-title">No active sessions</p>
                       <p className="board-hint-body">
-                        Double-click anywhere or press <kbd>N</kbd> to start a Claude session, or{' '}
-                        <kbd>T</kbd> for a terminal. Drag cards out of the archive to reactivate them.
+                        Double-click anywhere or press <kbd>N</kbd> to start a Claude session, <kbd>V</kbd> to
+                        speak one, or <kbd>T</kbd> for a terminal. Drag cards out of the archive to reactivate them.
                       </p>
                     </div>
                   )}
 
                   <ActionRail onRun={runAction} onOverlayChange={setDockOverlay} />
+
+                  <VoicePrompt ref={voiceRef} projectId={projectId} onStart={(text) => void startSpokenPrompt(text)} />
 
                   {selectedCards.length > 0 && !merge && (
                     <SelectionBar

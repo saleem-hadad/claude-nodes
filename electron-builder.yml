@@ -23,6 +23,9 @@ mac:
   # Hardened runtime only matters for notarization.
   identity: '-'
   hardenedRuntime: false
+  # Shown when the mic button first asks for the microphone.
+  extendInfo:
+    NSMicrophoneUsageDescription: Claude Nodes listens only while you record with the mic button, to turn what you say into a prompt.
 dmg:
   # No auto-updater, so skip the .blockmap files.
   writeUpdateInfo: false
