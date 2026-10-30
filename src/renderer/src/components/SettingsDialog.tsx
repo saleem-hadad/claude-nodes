@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { X } from 'lucide-react'
 import clsx from 'clsx'
-import type { AppSettings, ThemePreference } from '@shared/types'
+import type { AppSettings, ThemePreference, VoiceKeySource } from '@shared/types'
 import { useApp } from '@renderer/store'
 import { Modal } from './Modal'
 import './SettingsDialog.css'
@@ -92,8 +92,93 @@ function SettingsPanel({ onClose }: { onClose: () => void }) {
           </div>
           <p className="settings-hint">System follows the appearance set in macOS.</p>
         </fieldset>
+
+        <VoiceSettings />
       </div>
     </div>
+  )
+}
+
+/**
+ * The xAI key behind the board's mic button. The key itself never comes back
+ * from the main process; only where it's from.
+ */
+function VoiceSettings() {
+  /** undefined while loading. */
+  const [source, setSource] = useState<VoiceKeySource | undefined>(undefined)
+  const [key, setKey] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    window.api.voice.keySource().then((s) => !cancelled && setSource(s))
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const save = async (value: string | null) => {
+    setError(null)
+    try {
+      setSource(await window.api.voice.setKey(value))
+      setKey('')
+      // Save goes disabled and Remove goes away; keep focus in the dialog so Esc still closes it.
+      inputRef.current?.focus()
+    } catch (err) {
+      setError(err instanceof Error ? err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(err))
+    }
+  }
+
+  return (
+    <fieldset className="settings-group">
+      <legend className="settings-label">Voice prompts</legend>
+      <form
+        className="settings-key"
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (key.trim()) void save(key)
+        }}
+      >
+        <input
+          ref={inputRef}
+          type="password"
+          className="settings-input"
+          placeholder={source === 'settings' ? 'Replace the saved xAI API key' : 'xAI API key'}
+          aria-label="xAI API key"
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+          autoComplete="off"
+          spellCheck={false}
+          disabled={source === undefined}
+        />
+        <button type="submit" className="btn" disabled={!key.trim()}>
+          Save
+        </button>
+      </form>
+      <p className="settings-hint">
+        {source === 'settings' ? (
+          <>
+            Saved in your Keychain.{' '}
+            <button type="button" className="settings-link" onClick={() => void save(null)}>
+              Remove
+            </button>
+          </>
+        ) : source === 'env' ? (
+          'Using XAI_API_KEY from your shell. A key saved here takes its place.'
+        ) : (
+          <>
+            Add a key to speak prompts with the mic button. Get one at{' '}
+            <a href="https://console.x.ai" target="_blank" rel="noreferrer">
+              console.x.ai
+            </a>
+            .
+          </>
+        )}
+      </p>
+      <p className="settings-hint">Recordings are sent to xAI to be turned into text.</p>
+      {error && <p className="settings-error">{error}</p>}
+    </fieldset>
   )
 }
 

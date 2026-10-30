@@ -342,6 +342,15 @@ export interface AppSettings {
 }
 
 /**
+ * Where the xAI API key for voice prompts comes from: saved in Settings, the
+ * XAI_API_KEY in the user's shell, or nowhere yet.
+ */
+export type VoiceKeySource = 'settings' | 'env' | null
+
+/** What a spoken prompt came back as; `keyProblem` when the API key is missing or was refused. */
+export type TranscribeResult = { text: string } | { error: string; keyProblem?: boolean }
+
+/**
  * How a changed file differs from HEAD. Untracked files are new files git
  * doesn't know about yet; they read as added in the UI.
  */

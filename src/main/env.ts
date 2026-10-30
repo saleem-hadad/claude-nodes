@@ -128,6 +128,11 @@ export function spawnEnv(extra: Record<string, string> = {}): Record<string, str
   return { ...env, ...extra }
 }
 
+/** A variable from the user's login-shell environment. */
+export function envVar(name: string): string | undefined {
+  return baseEnv[name]
+}
+
 /** The user's login shell, for terminal cards. */
 export function userShell(): string {
   const shell = baseEnv.SHELL || process.env.SHELL

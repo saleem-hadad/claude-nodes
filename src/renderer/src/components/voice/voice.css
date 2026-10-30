@@ -1,0 +1,270 @@
+/* ───────────── Voice prompts: the mic button above the minimap, bottom right ───────────── */
+
+.voice {
+  position: absolute;
+  z-index: 6;
+  right: 16px;
+  /* Clears the minimap: 118px tall, 16px off the bottom. */
+  bottom: calc(16px + 118px + 12px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  pointer-events: none;
+}
+.voice > * {
+  pointer-events: auto;
+}
+
+.voice-dock {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.voice-button {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--bg-elevated) 86%, transparent);
+  backdrop-filter: blur(20px) saturate(1.6);
+  box-shadow: var(--shadow-md);
+  color: var(--text-secondary);
+  cursor: default;
+  transition:
+    background var(--dur-fast) ease,
+    color var(--dur-fast) ease,
+    transform var(--dur-fast) ease;
+}
+.voice-button:hover {
+  color: var(--text-primary);
+}
+.voice-button:active {
+  transform: scale(0.94);
+}
+.voice-button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.voice-button.is-recording {
+  background: var(--status-waiting);
+  color: #fff;
+  /* A halo that swells with the voice (--level is set while recording). */
+  box-shadow:
+    0 0 0 calc(3px + var(--level, 0) * 12px) color-mix(in srgb, var(--status-waiting) 20%, transparent),
+    var(--shadow-md);
+  transition:
+    background var(--dur-fast) ease,
+    transform var(--dur-fast) ease,
+    box-shadow 80ms linear;
+}
+
+/* The pill beside the button: listening, transcribing, or something to tell. */
+.voice-pill,
+.voice-dock .voice-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--bg-elevated) 86%, transparent);
+  backdrop-filter: blur(20px) saturate(1.6);
+  box-shadow: var(--shadow-md);
+  font-size: var(--text-sm);
+  transform-origin: right center;
+  animation: voice-pill-in var(--dur-med) var(--ease-out);
+}
+.voice-pill {
+  padding: 0 6px 0 14px;
+}
+.voice-dock .voice-notice {
+  max-width: 440px;
+  padding: 6px 6px 6px 12px;
+}
+@keyframes voice-pill-in {
+  from {
+    opacity: 0;
+    transform: translateX(10px) scale(0.96);
+  }
+}
+
+.voice-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.voice-rec-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--status-waiting);
+  animation: voice-blink 1.2s ease-in-out infinite;
+}
+@keyframes voice-blink {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.voice-time {
+  min-width: 28px;
+  color: var(--text-primary);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.voice-meter {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 16px;
+}
+.voice-bar {
+  width: 3px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--text-secondary);
+  transform: scaleY(clamp(0.18, var(--level, 0) * 1.4, 1));
+  transition: transform 70ms linear;
+}
+
+.voice-icon-btn {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: default;
+}
+.voice-icon-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.voice-notice-icon {
+  flex: none;
+  color: var(--status-waiting);
+}
+.voice-notice-text {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-primary);
+  line-height: 1.35;
+}
+.voice-notice-action.btn {
+  flex: none;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  font-size: var(--text-sm);
+}
+
+/* ───────────── Reviewing what was said ───────────── */
+
+.voice-review {
+  display: flex;
+  flex-direction: column;
+  width: 400px;
+  max-width: calc(100vw - 32px);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--bg-elevated) 94%, transparent);
+  backdrop-filter: blur(24px) saturate(1.6);
+  box-shadow: var(--shadow-lg);
+  /* Grows out of the button it replaces. */
+  transform-origin: bottom right;
+  animation: voice-review-in var(--dur-med) var(--ease-out);
+}
+@keyframes voice-review-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+}
+
+.voice-text {
+  field-sizing: content;
+  min-height: calc(3lh + 20px);
+  max-height: 40vh;
+  padding: 14px 16px 6px;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-md);
+  line-height: 1.5;
+}
+.voice-text::placeholder {
+  color: var(--text-tertiary);
+}
+.voice-text[readonly] {
+  color: var(--text-secondary);
+}
+
+.voice-review .voice-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 10px 0;
+  padding: 6px 4px 6px 10px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--status-waiting) 9%, transparent);
+  font-size: var(--text-sm);
+}
+
+.voice-review-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 48px;
+  padding: 0 10px;
+}
+.voice-spacer {
+  flex: 1;
+}
+
+.voice-more.btn {
+  padding: 0 8px;
+  color: var(--text-secondary);
+}
+.voice-more.btn:hover {
+  color: var(--text-primary);
+}
+
+/* Stop, while saying more from the review box. */
+.voice-stop {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-left: 2px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--status-waiting);
+  color: #fff;
+  box-shadow: 0 0 0 calc(2px + var(--level, 0) * 6px) color-mix(in srgb, var(--status-waiting) 20%, transparent);
+  cursor: default;
+  transition: box-shadow 80ms linear;
+}
+/* The stop button already says it's listening. */
+.voice-review .voice-rec-dot {
+  display: none;
+}
+
+.voice-key {
+  opacity: 0.75;
+  font-size: var(--text-xs);
+}

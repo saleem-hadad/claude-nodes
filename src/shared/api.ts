@@ -28,8 +28,10 @@ import type {
   SessionUsage,
   SummarizeProgress,
   SummaryResult,
+  TranscribeResult,
   TranscriptMessage,
-  Viewport
+  Viewport,
+  VoiceKeySource
 } from './types'
 
 export const IPC = {
@@ -78,6 +80,12 @@ export const IPC = {
   actionsSave: 'actions:save',
   actionsRemove: 'actions:remove',
   actionsDraft: 'actions:draft',
+
+  voiceKeySource: 'voice:key-source',
+  voiceSetKey: 'voice:set-key',
+  voiceMicrophone: 'voice:microphone',
+  voiceMicrophoneSettings: 'voice:microphone-settings',
+  voiceTranscribe: 'voice:transcribe',
 
   // main -> renderer events
   evPtyData: 'ev:pty-data',
@@ -203,6 +211,19 @@ export interface Api {
     remove(projectId: string, actionId: string): Promise<ActionLists>
     /** Asks Claude to turn a description into a name, icon and prompt. A global one fits any repository. */
     draft(projectId: string, description: string, global: boolean): Promise<ActionDraft>
+  }
+
+  /** The board's mic button: speech to text through xAI. The key never leaves the main process. */
+  voice: {
+    keySource(): Promise<VoiceKeySource>
+    /** Saves the key, encrypted with the macOS Keychain; null forgets it. */
+    setKey(key: string | null): Promise<VoiceKeySource>
+    /** Asks macOS for the microphone the first time; false once the user has said no. */
+    microphone(): Promise<boolean>
+    /** Opens Privacy & Security › Microphone in System Settings. */
+    openMicrophoneSettings(): Promise<void>
+    /** Transcribes a recording, hinted with names from the project so they come back spelled right. */
+    transcribe(projectId: string, audio: Uint8Array, mimeType: string): Promise<TranscribeResult>
   }
 
   on: {
