@@ -105,3 +105,5 @@ To build from source, see [Development](docs/how-it-works.md#development).
 Everything stays on your machine. The app reads transcripts where Claude Code keeps them and saves only the board layout.
 
 [How it works](docs/how-it-works.md) covers the architecture, every shortcut, known limitations and development.
+
+<sub>Claude Nodes is an independent project, not affiliated with or endorsed by Anthropic. Claude is a trademark of Anthropic, PBC.</sub>
